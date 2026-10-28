@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Complaint Update Form</title>
+<link href="/bootstrap/css/bootstrap.min.css" rel="stylesheet" type="text/css" />
+<link href="/css/theme.css" rel="stylesheet" type="text/css" />
+
+<style type="text/css">
+  body { padding: 20px; background: #fff; font-family: 'Open Sans', Arial, sans-serif; font-size: 12px; }
+  .dnone, .dnone1, .dnone2, .dnone3, .dnone4, .dnone5, .dnone6, .dnone7, .dnone8, .dnone9, .dnone14, .dnone22, .dnonet {
+    display: none;
+  }
+  table td { padding: 6px; }
+  .btn-submit { background-color: #008080; color: white; font-weight: bold; }
+  .btn-submit:hover { background-color: #006666; color: white; }
+</style>
+
+<script>
+function getQueryParam(name) {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get(name) || '';
+}
+
+function toggleField(ans) {
+  const val = ans.value;
+  if (val === "forward") {
+    document.getElementById('tinfo').classList.add('dnonet');
+    document.getElementById('hiddenField').classList.remove('dnone');
+    document.getElementById('targetDivLabel').innerHTML = '<b>Target Division</b>';
+    document.getElementById('file').classList.add('dnone9');
+    hideSubFields();
+  } else if (val === "revert") {
+    document.getElementById('tinfo').classList.add('dnonet');
+    document.getElementById('hiddenField').classList.remove('dnone');
+    document.getElementById('targetDivLabel').innerHTML = '<b>Suggest a Division</b>';
+    document.getElementById('file').classList.add('dnone9');
+    hideSubFields();
+  } else if (val === "closed") {
+    document.getElementById('tinfo').classList.remove('dnonet');
+    document.getElementById('hiddenField').classList.add('dnone');
+    document.getElementById('file').classList.add('dnone9');
+    hideSubFields();
+  } else {
+    document.getElementById('tinfo').classList.add('dnonet');
+    document.getElementById('hiddenField').classList.add('dnone');
+    hideSubFields();
+  }
+}
+
+function hideSubFields() {
+  document.getElementById('cat').classList.add('dnone1');
+  document.getElementById('load').classList.add('dnone2');
+  document.getElementById('assess').classList.add('dnone3');
+  document.getElementById('reali').classList.add('dnone4');
+  document.getElementById('scat').classList.add('dnone5');
+  document.getElementById('acat').classList.add('dnone6');
+  document.getElementById('sload').classList.add('dnone7');
+  document.getElementById('aload').classList.add('dnone8');
+  document.getElementById('cn').classList.add('dnone14');
+}
+
+function toggleField1(ans) {
+  hideSubFields();
+  document.getElementById('file').classList.remove('dnone9');
+  const val = ans.value;
+
+  if (val === "Theft Found & FIR Done") {
+    document.getElementById('cat').classList.remove('dnone1');
+    document.getElementById('load').classList.remove('dnone2');
+    document.getElementById('assess').classList.remove('dnone3');
+    document.getElementById('reali').classList.remove('dnone4');
+  } else if (val === "Wrong Tariff") {
+    document.getElementById('assess').classList.remove('dnone3');
+    document.getElementById('reali').classList.remove('dnone4');
+    document.getElementById('scat').classList.remove('dnone5');
+    document.getElementById('acat').classList.remove('dnone6');
+    document.getElementById('sload').classList.remove('dnone7');
+    document.getElementById('aload').classList.remove('dnone8');
+  } else if (val === "Load Enhancement Case") {
+    document.getElementById('sload').classList.remove('dnone7');
+    document.getElementById('aload').classList.remove('dnone8');
+  } else if (val === "Duplicate") {
+    document.getElementById('cn').classList.remove('dnone14');
+  }
+}
+
+async function handleUpdate(e) {
+  e.preventDefault();
+  const cid = getQueryParam('cid');
+  const token = localStorage.getItem('bm_token') || '';
+  const status = document.getElementById('status').value;
+  const remark = document.getElementById('remark').value;
+  const info = document.getElementById('info') ? document.getElementById('info').value : '';
+
+  if (!status) return alert('Select status');
+  if (!remark) return alert('Remark is mandatory');
+
+  const payload = { status, remark };
+  if (status === 'closed') {
+    payload.info = info;
+    if (info === 'Theft Found & FIR Done') {
+      payload.category = document.getElementById('cat1').value;
+      payload.loads = document.getElementById('load1').value;
+      payload.assess = document.getElementById('assess1').value;
+      payload.reali = document.getElementById('reali1').value;
+    } else if (info === 'Wrong Tariff') {
+      payload.scat = document.getElementById('scat1').value;
+      payload.acat = document.getElementById('acat1').value;
+      payload.sload = document.getElementById('sload1').value;
+      payload.aload = document.getElementById('aload1').value;
+      payload.assess = document.getElementById('assess1').value;
+      payload.reali = document.getElementById('reali1').value;
+    } else if (info === 'Load Enhancement Case') {
+      payload.sload = document.getElementById('sload1').value;
+      payload.aload = document.getElementById('aload1').value;
+    } else if (info === 'Duplicate') {
+      payload.cn = document.getElementById('cn1').value;
+    }
+  }
+
+  try {
+    let url = `/api/complaints/${cid}/update-status`;
+    let reqBody = payload;
+
+    if (status === 'forward') {
+      url = `/api/complaints/${cid}/forward-to-division`;
+      const targetDiv = document.getElementById('targetDivision').value;
+      if (!targetDiv) return alert('Select target field division');
+      reqBody = {
+        target_division: targetDiv,
+        remark: remark
+      };
+    } else if (status === 'revert') {
+      url = `/api/complaints/${cid}/revert-to-superadmin`;
+      const targetDiv = document.getElementById('targetDivision').value;
+      if (!targetDiv) return alert('Select suggested field division');
+      reqBody = {
+        suggestedDivision: targetDiv,
+        remark: remark
+      };
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(reqBody)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Update failed');
+    alert('Complaint details updated successfully');
+    if (window.opener && !window.opener.closed) {
+      window.opener.location.reload();
+    }
+    window.close();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+}
+
+window.onload = async function() {
+  const cid = getQueryParam('cid');
+  document.getElementById('displayCid').innerText = '#' + cid;
+
+  const token = localStorage.getItem('bm_token') || '';
+  try {
+    const res = await fetch('/api/complaints/meta/division-officers', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (data.officers) {
+      const select = document.getElementById('targetDivision');
+      select.innerHTML = '<option value="">Select Division</option>';
+      const byDiscom = {};
+      data.officers.forEach(o => {
+        if (!byDiscom[o.DISCOM]) byDiscom[o.DISCOM] = [];
+        byDiscom[o.DISCOM].push(o);
+      });
+      Object.keys(byDiscom).sort().forEach(discom => {
+        const grp = document.createElement('optgroup');
+        grp.label = discom;
+        byDiscom[discom].forEach(o => {
+          const opt = document.createElement('option');
+          opt.value = o.username;
+          opt.textContent = `${o.username} (${o.zone || discom})`;
+          grp.appendChild(opt);
+        });
+        select.appendChild(grp);
+      });
+    }
+  } catch (e) {
+    console.error('Failed to load division officers:', e);
+  }
+};
+</script>
+</head>
+<body>
+
+<div style="max-width: 460px; margin: 0 auto;">
+  <h4 style="color: #008080; border-bottom: 2px solid #008080; padding-bottom: 8px; margin-bottom: 16px;">
+    UPPCL Bijli Mitra &mdash; Action Form
+  </h4>
+
+  <form name="updateticket" id="updatecomplaint" onsubmit="handleUpdate(event)">
+    <table width="100%" border="0" cellspacing="0" cellpadding="0">
+      <tr height="36">
+        <td width="35%"><b>Complaint Number</b></td>
+        <td><span id="displayCid" style="font-weight: bold; color: #b91c1c;"></span></td>
+      </tr>
+
+      <tr height="40">
+        <td><b>Status *</b></td>
+        <td>
+          <select name="status" id="status" onchange="toggleField(this)" required="required" class="form-control" style="width: 100%;">
+            <option value="">Select Status</option>
+            <option value="closed">Close</option>
+            <option value="revert">Revert Back to Super Admin</option>
+            <option value="forward">Forward to Division</option>
+          </select>
+        </td>
+      </tr>
+
+      <tr height="40" id="hiddenField" class="dnone">
+        <td id="targetDivLabel"><b>Target Division</b></td>
+        <td>
+          <select name="targetDivision" id="targetDivision" class="form-control" style="width: 100%;">
+            <option value="">Loading divisions...</option>
+          </select>
+        </td>
+      </tr>
+
+      <tr height="40" id="tinfo" class="dnonet">
+        <td><b>Theft Info *</b></td>
+        <td>
+          <select name="info" id="info" onchange="toggleField1(this)" class="form-control" style="width: 100%;">
+            <option value="">Select Verdict</option>
+            <option value="Theft Found & FIR Done">Theft Found & FIR Done</option>
+            <option value="Wrong Tariff">Wrong Tariff</option>
+            <option value="Load Enhancement Case">Load Enhancement Case</option>
+            <option value="Duplicate">Duplicate</option>
+            <option value="Theft Not Found">Theft Not Found</option>
+            <option value="Frivolous">Frivolous</option>
+            <option value="Reading Storage Case">Reading Storage Case</option>
+          </select>
+        </td>
+      </tr>
+
+      <!-- Sub-field: Category -->
+      <tr height="40" id="cat" class="dnone1">
+        <td><b>Category</b></td>
+        <td>
+          <select name="cat" id="cat1" class="form-control" style="width: 100%;">
+            <option value="">Select Category</option>
+            <option value="lmv1">LMV1 Domestic</option>
+            <option value="lmv2">LMV2 Commercial</option>
+            <option value="lmv4">LMV4 Institutional</option>
+            <option value="lmv5">LMV5 Agriculture</option>
+            <option value="lmv6">LMV6 Industrial</option>
+            <option value="lmv9">LMV9</option>
+            <option value="lmv11">LMV11</option>
+            <option value="hv1">HV1</option>
+            <option value="hv2">HV2</option>
+          </select>
+        </td>
+      </tr>
+
+      <!-- Sub-field: Load -->
+      <tr height="40" id="load" class="dnone2">
+        <td><b>Load (in kW)</b></td>
+        <td><input name="load" type="number" step="any" placeholder="in KW" id="load1" class="form-control" style="width: 95%;"></td>
+      </tr>
+
+      <!-- Sub-field: Assessment -->
+      <tr height="40" id="assess" class="dnone3">
+        <td><b>Assessment (₹)</b></td>
+        <td><input name="assess" type="number" placeholder="Penalty Amount ₹" id="assess1" class="form-control" style="width: 95%;"></td>
+      </tr>
+
+      <!-- Sub-field: Realisation -->
+      <tr height="40" id="reali" class="dnone4">
+        <td><b>Realised (₹)</b></td>
+        <td><input name="reali" type="number" placeholder="Realised Amount ₹" id="reali1" class="form-control" style="width: 95%;"></td>
+      </tr>
+
+      <!-- Sub-field: Sanctioned Category -->
+      <tr height="40" id="scat" class="dnone5">
+        <td><b>Sanctioned Cat</b></td>
+        <td>
+          <select name="scat" id="scat1" class="form-control" style="width: 100%;">
+            <option value="lmv1">LMV1 Domestic</option>
+            <option value="lmv5">LMV5 Agriculture</option>
+          </select>
+        </td>
+      </tr>
+
+      <!-- Sub-field: Actual Category -->
+      <tr height="40" id="acat" class="dnone6">
+        <td><b>Actual Cat</b></td>
+        <td>
+          <select name="acat" id="acat1" class="form-control" style="width: 100%;">
+            <option value="lmv2">LMV2 Commercial</option>
+            <option value="lmv6">LMV6 Industrial</option>
+          </select>
+        </td>
+      </tr>
+
+      <!-- Sub-field: Sanctioned Load -->
+      <tr height="40" id="sload" class="dnone7">
+        <td><b>Sanctioned Load</b></td>
+        <td><input name="sload" type="number" step="any" placeholder="in KW" id="sload1" class="form-control" style="width: 95%;"></td>
+      </tr>
+
+      <!-- Sub-field: Actual Load -->
+      <tr height="40" id="aload" class="dnone8">
+        <td><b>Actual Load</b></td>
+        <td><input name="aload" type="number" step="any" placeholder="in KW" id="aload1" class="form-control" style="width: 95%;"></td>
+      </tr>
+
+      <!-- Sub-field: Duplicate Complaint Number -->
+      <tr height="40" id="cn" class="dnone14">
+        <td><b>Master Ref Ticket</b></td>
+        <td><input name="cn" type="number" placeholder="Original Complaint No." id="cn1" class="form-control" style="width: 95%;"></td>
+      </tr>
+
+      <!-- Sub-field: File -->
+      <tr height="40" id="file" class="dnone9">
+        <td><b>FIR / Seizure Doc</b></td>
+        <td><input type="file" name="file1" id="file1" class="form-control" style="width: 95%;"></td>
+      </tr>
+
+      <!-- Remark Textarea -->
+      <tr height="70">
+        <td style="vertical-align: top; padding-top: 8px;"><b>Remark *</b></td>
+        <td>
+          <textarea name="remark" id="remark" rows="3" class="form-control" style="width: 95%;" placeholder="Enter site inspection findings..." required></textarea>
+        </td>
+      </tr>
+
+      <tr height="50">
+        <td>&nbsp;</td>
+        <td style="padding-top: 10px;">
+          <button type="submit" class="btn btn-submit">Update Details</button>
+          <button type="button" onclick="window.close()" class="btn btn-default" style="margin-left: 8px;">Close Window</button>
+        </td>
+      </tr>
+    </table>
+  </form>
+</div>
+
+</body>
+</html>

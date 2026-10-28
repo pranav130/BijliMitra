@@ -94,6 +94,182 @@
 
     const API_BASE = '/api';
 
+    // =========================================================================
+    // GitHub Pages Mock Adapter (Interactive Demo Mode for github.io)
+    // =========================================================================
+    if (window.location.hostname.includes('github.io') || window.location.protocol === 'file:') {
+      console.log('[Demo Mode] Active on GitHub Pages with simulated UPPCL dataset');
+      const originalFetch = window.fetch;
+      
+      const MOCK_DISTRICTS = [
+        { id: 1, stateName: 'LUCKNOW (लखनऊ)', stateDescription: 'Headquarters Zone' },
+        { id: 2, stateName: 'AGRA (आगरा)', stateDescription: 'DVVNL Zone' },
+        { id: 3, stateName: 'ALIGARH (अलीगढ़)', stateDescription: 'DVVNL Zone' },
+        { id: 4, stateName: 'AYODHYA (अयोध्या)', stateDescription: 'MVVNL Zone' },
+        { id: 5, stateName: 'BAREILLY (बरेली)', stateDescription: 'MVVNL Zone' },
+        { id: 6, stateName: 'GORAKHPUR (गोरखपुर)', stateDescription: 'PuVVNL Zone' },
+        { id: 7, stateName: 'KANPUR NAGAR (कानपुर नगर)', stateDescription: 'KESCO Zone' },
+        { id: 8, stateName: 'MEERUT (मेरठ)', stateDescription: 'PVVNL Zone' },
+        { id: 9, stateName: 'VARANASI (वाराणसी)', stateDescription: 'PuVVNL Zone' },
+        { id: 10, stateName: 'GHAZIABAD (गाज़ियाबाद)', stateDescription: 'PVVNL Zone' },
+        { id: 11, stateName: 'PRAYAGRAJ (प्रयागराज)', stateDescription: 'PuVVNL Zone' },
+        { id: 12, stateName: 'JHANSI (झांसी)', stateDescription: 'DVVNL Zone' }
+      ];
+
+      const MOCK_OFFICERS = [
+        { username: 'admin', DISCOM: 'UPPCL HQ', zone: 'Headquarters', circle: 'Enforcement' },
+        { username: 'mvvnl_nodal', DISCOM: 'MVVNL', zone: 'Lucknow', circle: 'Lucknow-1' },
+        { username: 'dvvnl_nodal', DISCOM: 'DVVNL', zone: 'Agra', circle: 'Agra-1' },
+        { username: 'pvvnl_nodal', DISCOM: 'PVVNL', zone: 'Meerut', circle: 'Meerut-1' },
+        { username: 'puvvnl_nodal', DISCOM: 'PuVVNL', zone: 'Varanasi', circle: 'Varanasi-1' },
+        { username: 'kesco_nodal', DISCOM: 'KeSCO', zone: 'Kanpur', circle: 'Kesco-HQ' },
+        { username: 'eddrajapur', DISCOM: 'MVVNL', zone: 'Lucknow', circle: 'Circle-II' },
+        { username: 'edd2mahobakp', DISCOM: 'DVVNL', zone: 'Banda', circle: 'Circle-Banda' }
+      ];
+
+      const MOCK_METRICS = {
+        totalReceived: 1842,
+        closed: 1120,
+        forwarded: 540,
+        notProcessed: 148,
+        reverted: 34,
+        theftCases: 912,
+        assessmentCr: '24.65',
+        realisationCr: '18.30'
+      };
+
+      const MOCK_COMPLAINTS = [
+        {
+          complaintNumber: 10082,
+          regDate: '2026-10-26 14:30:00',
+          subcategory: 'Direct Hooking / Katia (कटिया डालकर चोरी)',
+          state: 'LUCKNOW (लखनऊ)',
+          status: null,
+          remark: 'Informant reports 5kW illegal connection to commercial flour mill',
+          load_kw: '5.00',
+          assessment_amt: '125000',
+          realisation_amt: '85000',
+          sdivision: 'EDD-I Gomti Nagar',
+          assigned_to: 'eddrajapur'
+        },
+        {
+          complaintNumber: 10081,
+          regDate: '2026-10-26 11:15:00',
+          subcategory: 'Meter Tampered / Bypassed (मीटर बाईपास)',
+          state: 'KANPUR NAGAR (कानपुर नगर)',
+          status: 'forward',
+          remark: 'Bypassed CT/PT unit in manufacturing shed',
+          load_kw: '12.50',
+          assessment_amt: '340000',
+          realisation_amt: '200000',
+          sdivision: 'EDD-Kesco Central',
+          assigned_to: 'kesco_nodal'
+        },
+        {
+          complaintNumber: 10080,
+          regDate: '2026-10-25 16:45:00',
+          subcategory: 'Commercial Usage on Domestic Meter',
+          state: 'AGRA (आगरा)',
+          status: 'closed',
+          remark: 'Assessment paid in full via RTGS under LMV-2 tariff',
+          load_kw: '8.00',
+          assessment_amt: '185000',
+          realisation_amt: '185000',
+          sdivision: 'EDD-Sanjay Place Agra',
+          assigned_to: 'dvvnl_nodal'
+        },
+        {
+          complaintNumber: 10079,
+          regDate: '2026-10-25 09:20:00',
+          subcategory: 'Industrial Load on Agriculture Tariff',
+          state: 'VARANASI (वाराणसी)',
+          status: 'reverted',
+          remark: 'Jurisdiction error - location belongs to EDD-Shivpur',
+          load_kw: '15.00',
+          assessment_amt: '450000',
+          realisation_amt: '0',
+          sdivision: 'EDD-Shivpur Varanasi',
+          assigned_to: 'puvvnl_nodal'
+        },
+        {
+          complaintNumber: 10078,
+          regDate: '2026-10-24 13:10:00',
+          subcategory: 'Direct Hooking / Katia (कटिया डालकर चोरी)',
+          state: 'MEERUT (मेरठ)',
+          status: null,
+          remark: 'Night inspection requested; commercial cold storage hooking',
+          load_kw: '20.00',
+          assessment_amt: '620000',
+          realisation_amt: '310000',
+          sdivision: 'EDD-Partapur Meerut',
+          assigned_to: 'pvvnl_nodal'
+        }
+      ];
+
+      window.fetch = async (url, options = {}) => {
+        const urlStr = typeof url === 'string' ? url : (url.url || '');
+
+        const jsonRes = (data, status = 200) => ({
+          ok: status >= 200 && status < 300,
+          status,
+          json: async () => data,
+          text: async () => JSON.stringify(data)
+        });
+
+        if (urlStr.includes('/auth/login')) {
+          const body = options.body ? JSON.parse(options.body) : {};
+          const username = body.username || 'admin';
+          let role = 'SUPER_ADMIN';
+          let discom = 'UPPCL HQ';
+          const u = username.toLowerCase();
+          if (u.includes('mvvnl')) { role = 'DISCOM_ADMIN'; discom = 'MVVNL'; }
+          else if (u.includes('dvvnl')) { role = 'DISCOM_ADMIN'; discom = 'DVVNL'; }
+          else if (u.includes('pvvnl')) { role = 'DISCOM_ADMIN'; discom = 'PVVNL'; }
+          else if (u.includes('puvvnl')) { role = 'DISCOM_ADMIN'; discom = 'PuVVNL'; }
+          else if (u.includes('kesco')) { role = 'DISCOM_ADMIN'; discom = 'KeSCO'; }
+          else if (u.includes('edd') || u.includes('div')) { role = 'DIVISION_OFFICER'; discom = 'MVVNL'; }
+
+          return jsonRes({
+            ok: true,
+            token: 'demo-jwt-token-' + Date.now(),
+            user: { id: 1, username, role, DISCOM: discom, zone: 'Zone-1', circle: 'Circle-1' }
+          });
+        }
+
+        if (urlStr.includes('/complaints/dashboard/metrics')) return jsonRes(MOCK_METRICS);
+        if (urlStr.includes('/complaints/meta/districts')) return jsonRes(MOCK_DISTRICTS);
+        if (urlStr.includes('/complaints/meta/officers-all') || urlStr.includes('/complaints/meta/division-officers')) return jsonRes(MOCK_OFFICERS);
+
+        if (urlStr.includes('/complaints/reports/discom-summary')) {
+          return jsonRes([
+            { discom: 'MVVNL', total: 540, closed: 340, pending: 200, assessment: '7.85', realisation: '5.40' },
+            { discom: 'DVVNL', total: 420, closed: 260, pending: 160, assessment: '6.10', realisation: '4.80' },
+            { discom: 'PVVNL', total: 410, closed: 250, pending: 160, assessment: '5.90', realisation: '4.20' },
+            { discom: 'PuVVNL', total: 320, closed: 190, pending: 130, assessment: '3.60', realisation: '2.90' },
+            { discom: 'KeSCO', total: 152, closed: 80, pending: 72, assessment: '1.20', realisation: '1.00' }
+          ]);
+        }
+
+        if (urlStr.includes('/complaints/reports/division-wise-data')) {
+          return jsonRes([
+            { discom: 'MVVNL', zone: 'Lucknow', circle: 'Circle-I', division: 'EDD-Cessu I', notProcessed: 12, pending5Days: 4, closed: 85, totalReceived: 101 },
+            { discom: 'MVVNL', zone: 'Lucknow', circle: 'Circle-II', division: 'EDD-Rajapur', notProcessed: 8, pending5Days: 2, closed: 64, totalReceived: 74 },
+            { discom: 'DVVNL', zone: 'Agra', circle: 'Circle-Agra', division: 'EDD-Sanjay Place', notProcessed: 15, pending5Days: 5, closed: 92, totalReceived: 112 },
+            { discom: 'PVVNL', zone: 'Meerut', circle: 'Circle-Meerut', division: 'EDD-Partapur', notProcessed: 9, pending5Days: 3, closed: 78, totalReceived: 90 }
+          ]);
+        }
+
+        if (urlStr.includes('/complaints')) return jsonRes(MOCK_COMPLAINTS);
+
+        try {
+          return await originalFetch(url, options);
+        } catch (e) {
+          return jsonRes({ ok: true, message: 'Demo action recorded successfully' });
+        }
+      };
+    }
+
+
     // 1-Click Role Switcher Presets
     const DEV_USERS = [
       { label: 'Super Admin (admin)', username: 'admin', password: 'Admin@123', role: 'SUPER_ADMIN', badge: 'bg-red-600' },
