@@ -1,0 +1,2261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UPPCL Bijli Mitra — Modern Grievance & Enforcement Portal</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome 6 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Google Fonts: Open Sans -->
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
+  
+  <!-- React 18 & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel Standalone for In-Browser JSX Compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body { font-family: 'Open Sans', sans-serif; background-color: #f4f6f9; }
+    .lavender-box { background-color: #e6e6fa; border: 1px solid #dcdcfe; }
+    .badge-orange { background-color: #f97316; color: white; }
+    .badge-green { background-color: #10b981; color: white; }
+    .badge-red { background-color: #ef4444; color: white; }
+  </style>
+</head>
+<body class="text-slate-800 antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useMemo } = React;
+
+    const API_BASE = '/api';
+
+    // Testing Logins (from admin.sql)
+    const DEV_USERS = [
+      { label: 'Super Admin (admin)', username: 'admin', password: 'Admin@123', role: 'SUPER_ADMIN', badge: 'bg-red-600' },
+      { label: 'Super Admin (admin1)', username: 'admin1', password: 'admin123', role: 'SUPER_ADMIN', badge: 'bg-red-700' },
+      { label: 'DISCOM (DVVNL)', username: 'DVVNL', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-amber-600' },
+      { label: 'DISCOM (KeSCO)', username: 'KeSCO', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-orange-600' },
+      { label: 'DISCOM (MVVNL)', username: 'MVVNL', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-yellow-600' },
+      { label: 'DISCOM (PuVVNL)', username: 'PuVVNL', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-emerald-600' },
+      { label: 'DISCOM (PVVNL)', username: 'PVVNL', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-blue-600' },
+      { label: 'Division (eddrajapur)', username: 'eddrajapur', password: 'Admin@123', role: 'DIVISION_OFFICER', badge: 'bg-indigo-600' },
+      { label: 'Division (edd2mahobakp)', username: 'edd2mahobakp', password: 'Admin@123', role: 'DIVISION_OFFICER', badge: 'bg-purple-600' }
+    ];
+
+    function App() {
+      const [token, setToken] = useState(localStorage.getItem('bm_token') || '');
+      const [user, setUser] = useState(() => {
+        try {
+          return JSON.parse(localStorage.getItem('bm_user') || 'null');
+        } catch (e) {
+          return null;
+        }
+      });
+      const [activeTab, setActiveTab] = useState('not_processed');
+      const [counts, setCounts] = useState({ notProcessed: 0, forwarded: 0, closed: 0, total: 0 });
+      const [districts, setDistricts] = useState([]);
+      const [notification, setNotification] = useState(null);
+      const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+      const [customLoginOpen, setCustomLoginOpen] = useState(false);
+      const [customUsername, setCustomUsername] = useState('');
+      const [customPassword, setCustomPassword] = useState('Admin@123');
+
+      // Auto-authenticate as default superadmin if not logged in
+      useEffect(() => {
+        if (!token) {
+          switchUser('admin', 'Admin@123');
+        } else {
+          fetchDistricts();
+          fetchBadgeCounts();
+        }
+      }, [token]);
+
+      const notify = (msg, type = 'success') => {
+        setNotification({ msg, type });
+        setTimeout(() => setNotification(null), 4000);
+      };
+
+      const switchUser = async (username, password) => {
+        try {
+          const res = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Login failed');
+          setToken(data.token);
+          setUser(data.user);
+          localStorage.setItem('bm_token', data.token);
+          localStorage.setItem('bm_user', JSON.stringify(data.user));
+          notify(`Switched session to ${data.user.username} (${data.user.role})`);
+        } catch (err) {
+          notify(err.message, 'error');
+        }
+      };
+
+      const handleLogout = () => {
+        setToken('');
+        setUser(null);
+        localStorage.removeItem('bm_token');
+        localStorage.removeItem('bm_user');
+        notify('Logged out successfully');
+      };
+
+      const fetchDistricts = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/complaints/meta/districts`);
+          const data = await res.json();
+          if (data.districts) setDistricts(data.districts);
+        } catch (e) {}
+      };
+
+      const fetchBadgeCounts = async () => {
+        if (!token) return;
+        try {
+          const res = await fetch(`${API_BASE}/complaints/dashboard/metrics`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.operational) {
+            setCounts({
+              notProcessed: data.operational.notProcessedCount || 0,
+              forwarded: data.operational.forwardCount || 0,
+              closed: data.operational.closedCount || 0,
+              total: data.operational.totalReceived || 0
+            });
+          }
+        } catch (e) {}
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          {/* Header */}
+          <header className="bg-slate-900 text-white shadow-md sticky top-0 z-40 border-b border-slate-800">
+            <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <img src="/img/uppcllogo.png" alt="UPPCL Logo" className="h-10 w-auto bg-white p-1 rounded" onError={(e) => { e.target.style.display = 'none'; }} />
+                <div>
+                  <h1 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                    <span>UPPCL BIJLI MITRA</span>
+                    <span className="text-xs bg-teal-600 text-teal-100 font-semibold px-2 py-0.5 rounded uppercase">Anti-Theft Grievance Redressal</span>
+                  </h1>
+                  <p className="text-xs text-slate-400">Uttar Pradesh Power Corporation Limited &mdash; Official Admin Portal</p>
+                </div>
+              </div>
+
+              {/* Dev Switcher & Profile */}
+              <div className="flex items-center flex-wrap gap-2 text-xs">
+                <span className="text-slate-400 mr-1 font-semibold hidden md:inline">1-Click Role Switch:</span>
+                {DEV_USERS.map(du => (
+                  <button
+                    key={du.username}
+                    onClick={() => switchUser(du.username, du.password)}
+                    className={`px-2.5 py-1 rounded font-semibold transition ${user?.username === du.username ? `${du.badge} text-white ring-2 ring-white` : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                  >
+                    {du.label}
+                  </button>
+                ))}
+
+                <button
+                  onClick={() => setCustomLoginOpen(true)}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-teal-300 rounded font-semibold transition border border-teal-500/50 flex items-center gap-1"
+                  title="Log in as any of the 440 divisional / DISCOM usernames from admin.sql"
+                >
+                  <i className="fa-solid fa-arrow-right-to-bracket text-teal-400"></i>
+                  <span>Login (440 Accounts)</span>
+                </button>
+
+                {user && (
+                  <div className="ml-3 pl-3 border-l border-slate-700 flex items-center gap-2">
+                    <div className="text-right">
+                      <div className="font-bold text-teal-400">{user.username}</div>
+                      <div className="text-[10px] text-slate-400 uppercase">{user.role} {user.isReadOnly ? '(View-Only)' : ''}</div>
+                    </div>
+                    <button
+                      onClick={() => setChangePasswordOpen(true)}
+                      title="Change Password"
+                      className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-xs flex items-center gap-1 font-semibold"
+                    >
+                      <i className="fa-solid fa-key"></i>
+                      <span className="hidden sm:inline">Password</span>
+                    </button>
+                    <button onClick={handleLogout} title="Logout" className="p-1.5 bg-slate-800 hover:bg-red-900 text-slate-300 hover:text-white rounded">
+                      <i className="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </header>
+
+          {/* Toast Notification */}
+          {notification && (
+            <div className={`fixed top-16 right-6 z-50 px-4 py-3 rounded-lg shadow-xl text-sm font-semibold flex items-center gap-2 ${notification.type === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'} transition`}>
+              <i className={`fa-solid ${notification.type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'}`}></i>
+              <span>{notification.msg}</span>
+            </div>
+          )}
+
+          {/* Main Content Area with Sidebar */}
+          <div className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex flex-col md:flex-row gap-6">
+            {/* Sidebar Navigation */}
+            <aside className="w-full md:w-64 shrink-0">
+              <div className="bg-white rounded-lg shadow border border-slate-200 overflow-hidden sticky top-20">
+                <div className="p-4 bg-slate-800 text-white font-bold text-sm flex items-center justify-between">
+                  <span className="flex items-center gap-2"><i className="fa-solid fa-bars"></i> Navigation Menu</span>
+                  <span className="text-xs bg-slate-700 px-2 py-0.5 rounded text-teal-300 font-mono">v2.0</span>
+                </div>
+                <nav className="p-2 space-y-1 text-sm font-medium">
+                  <button
+                    onClick={() => setActiveTab('not_processed')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md transition ${activeTab === 'not_processed' ? 'bg-teal-50 text-teal-800 font-bold border-l-4 border-teal-600' : 'text-slate-700 hover:bg-slate-100'}`}
+                  >
+                    <span className="flex items-center gap-2.5"><i className="fa-solid fa-inbox text-amber-500"></i> Not Processed Queue</span>
+                    <span className="badge-orange text-xs px-2 py-0.5 rounded-full font-bold">{counts.notProcessed}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('forwarded')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md transition ${activeTab === 'forwarded' ? 'bg-teal-50 text-teal-800 font-bold border-l-4 border-teal-600' : 'text-slate-700 hover:bg-slate-100'}`}
+                  >
+                    <span className="flex items-center gap-2.5"><i className="fa-solid fa-share-nodes text-indigo-500"></i> Forwarded Complaints</span>
+                    <span className="bg-indigo-600 text-white text-xs px-2 py-0.5 rounded-full font-bold">{counts.forwarded || 0}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('closed')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md transition ${activeTab === 'closed' ? 'bg-teal-50 text-teal-800 font-bold border-l-4 border-teal-600' : 'text-slate-700 hover:bg-slate-100'}`}
+                  >
+                    <span className="flex items-center gap-2.5"><i className="fa-solid fa-check-double text-emerald-600"></i> Closed Complaints</span>
+                    <span className="badge-green text-xs px-2 py-0.5 rounded-full font-bold">{counts.closed}</span>
+                  </button>
+
+                  <div className="pt-2 pb-1 px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Reports & Analytics</div>
+
+                  <button
+                    onClick={() => setActiveTab('mis_report')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md transition ${activeTab === 'mis_report' ? 'bg-teal-50 text-teal-800 font-bold border-l-4 border-teal-600' : 'text-slate-700 hover:bg-slate-100'}`}
+                  >
+                    <span className="flex items-center gap-2.5"><i className="fa-solid fa-chart-line text-purple-600"></i> DISCOM MIS Matrix</span>
+                    <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">Cr</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('district_summary')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md transition ${activeTab === 'district_summary' ? 'bg-teal-50 text-teal-800 font-bold border-l-4 border-teal-600' : 'text-slate-700 hover:bg-slate-100'}`}
+                  >
+                    <span className="flex items-center gap-2.5"><i className="fa-solid fa-map-location-dot text-indigo-600"></i> District Wise Summary</span>
+                    <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">75</span>
+                  </button>
+
+                  <div className="pt-2 pb-1 px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Public Portal</div>
+
+                  <button
+                    onClick={() => setActiveTab('register_public')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md transition ${activeTab === 'register_public' ? 'bg-teal-50 text-teal-800 font-bold border-l-4 border-teal-600' : 'text-slate-700 hover:bg-slate-100'}`}
+                  >
+                    <span className="flex items-center gap-2.5"><i className="fa-solid fa-plus-circle text-teal-600"></i> File Theft Grievance</span>
+                    <span className="text-xs text-teal-600 font-bold"><i className="fa-solid fa-bolt"></i></span>
+                  </button>
+
+                  {user?.role === 'SUPER_ADMIN' && (
+                    <>
+                      <div className="pt-2 pb-1 px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Admin Directory</div>
+
+                      <button
+                        onClick={() => setActiveTab('manage_users')}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md transition ${activeTab === 'manage_users' ? 'bg-teal-50 text-teal-800 font-bold border-l-4 border-teal-600' : 'text-slate-700 hover:bg-slate-100'}`}
+                      >
+                        <span className="flex items-center gap-2.5"><i className="fa-solid fa-users text-teal-600"></i> Manage Users</span>
+                        <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">users</span>
+                      </button>
+
+                      <button
+                        onClick={() => setActiveTab('user_logs')}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md transition ${activeTab === 'user_logs' ? 'bg-teal-50 text-teal-800 font-bold border-l-4 border-teal-600' : 'text-slate-700 hover:bg-slate-100'}`}
+                      >
+                        <span className="flex items-center gap-2.5"><i className="fa-solid fa-clipboard-list text-slate-600"></i> User Access Logs</span>
+                        <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">logs</span>
+                      </button>
+                    </>
+                  )}
+                </nav>
+
+                <div className="p-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600">
+                  <div className="font-semibold text-slate-700">Jurisdiction Active:</div>
+                  <div>DISCOM: <span className="font-bold text-slate-900">{user?.discom || 'HQ'}</span></div>
+                  <div>Zone: <span className="font-bold text-slate-900">{user?.zone || 'All Zones'}</span></div>
+                </div>
+              </div>
+            </aside>
+
+            {/* Dynamic Main View Area */}
+            <main className="flex-1 min-w-0">
+              {activeTab === 'not_processed' && (
+                <NotProcessedComplaintsView
+                  token={token}
+                  user={user}
+                  districts={districts}
+                  notify={notify}
+                  refreshBadgeCounts={fetchBadgeCounts}
+                />
+              )}
+
+              {activeTab === 'forwarded' && (
+                <ComplaintQueueView
+                  queueType="forwarded"
+                  title="Forwarded Complaints & Field Monitoring"
+                  subtitle={user?.role === 'SUPER_ADMIN' ? 'Statewide monitoring of grievances forwarded to all UP field divisions.' : (user?.role === 'DISCOM_ADMIN' ? `Monitoring grievances forwarded to ${user.discom} division accounts.` : 'Complaints forwarded to your field division for site inspection and action.')}
+                  statusBadge="Forwarded"
+                  token={token}
+                  user={user}
+                  districts={districts}
+                  notify={notify}
+                  refreshBadgeCounts={fetchBadgeCounts}
+                />
+              )}
+
+              {activeTab === 'closed' && (
+                <ComplaintQueueView
+                  queueType="closed"
+                  title="Closed / Disposed Complaints"
+                  subtitle="Disposed grievance archive with recorded FIR penalties and revenue realizations."
+                  statusBadge="Closed"
+                  token={token}
+                  user={user}
+                  districts={districts}
+                  notify={notify}
+                  refreshBadgeCounts={fetchBadgeCounts}
+                />
+              )}
+
+              {activeTab === 'mis_report' && (
+                <MISReportView token={token} notify={notify} />
+              )}
+
+              {activeTab === 'district_summary' && (
+                <DistrictSummaryView token={token} notify={notify} />
+              )}
+
+              {activeTab === 'register_public' && (
+                <PublicRegisterView
+                  districts={districts}
+                  notify={notify}
+                  onSubmitted={() => {
+                    fetchBadgeCounts();
+                    setActiveTab('not_processed');
+                  }}
+                />
+              )}
+
+              {activeTab === 'manage_users' && (
+                <ManageUsersView token={token} notify={notify} />
+              )}
+
+              {activeTab === 'user_logs' && (
+                <UserLogsView token={token} notify={notify} />
+              )}
+            </main>
+          </div>
+
+          {changePasswordOpen && (
+            <ChangePasswordModal
+              token={token}
+              onClose={() => setChangePasswordOpen(false)}
+              notify={notify}
+            />
+          )}
+
+          {customLoginOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-lg shadow-2xl max-w-sm w-full border border-slate-300 overflow-hidden">
+                <div className="bg-slate-800 text-white p-4 flex items-center justify-between">
+                  <h3 className="font-bold text-sm flex items-center gap-2">
+                    <i className="fa-solid fa-arrow-right-to-bracket text-teal-400"></i> Officer Login (440 Logins)
+                  </h3>
+                  <button onClick={() => setCustomLoginOpen(false)} className="text-slate-400 hover:text-white text-lg">&times;</button>
+                </div>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!customUsername) return notify('Username is required', 'error');
+                    switchUser(customUsername.trim(), customPassword.trim());
+                    setCustomLoginOpen(false);
+                  }}
+                  className="p-5 space-y-3 text-xs font-semibold"
+                >
+                  <div>
+                    <label className="text-slate-700 block mb-1">Username (from admin.sql):</label>
+                    <input
+                      type="text"
+                      value={customUsername}
+                      onChange={(e) => setCustomUsername(e.target.value)}
+                      placeholder="e.g. DVVNL, KeSCO, MVVNL, eddrajapur..."
+                      className="w-full border border-slate-300 rounded p-2 text-xs"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-700 block mb-1">Password:</label>
+                    <input
+                      type="password"
+                      value={customPassword}
+                      onChange={(e) => setCustomPassword(e.target.value)}
+                      placeholder="Default: Admin@123 or admin123"
+                      className="w-full border border-slate-300 rounded p-2 text-xs"
+                      required
+                    />
+                    <div className="text-[10px] text-slate-500 font-normal mt-1">
+                      Works with DB password or master fallback <code>Admin@123</code> / <code>admin123</code>.
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setCustomLoginOpen(false)}
+                      className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded font-bold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded font-bold shadow"
+                    >
+                      Log In
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 1. NOT PROCESSED COMPLAINTS VIEW (Exact Parity with notprocess-complaint.php)
+    // =========================================================================
+    function NotProcessedComplaintsView({ token, user, districts, notify, refreshBadgeCounts }) {
+      const [records, setRecords] = useState([]);
+      const [pagination, setPagination] = useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+      const [loading, setLoading] = useState(true);
+
+      // Filters matching legacy form: from_date, to_date, district, search
+      const [fromDate, setFromDate] = useState('');
+      const [toDate, setToDate] = useState('');
+      const [district, setDistrict] = useState('');
+      const [search, setSearch] = useState('');
+
+      // Modals
+      const [forwardModalData, setForwardModalData] = useState(null);
+      const [frivolousModalData, setFrivolousModalData] = useState(null);
+      const [actionModalData, setActionModalData] = useState(null);
+      const [dossierCid, setDossierCid] = useState(null);
+
+      const fetchRecords = useCallback(async (page = 1) => {
+        setLoading(true);
+        try {
+          const params = new URLSearchParams({
+            page: String(page),
+            limit: String(pagination.limit)
+          });
+          if (fromDate) params.append('from_date', fromDate);
+          if (toDate) params.append('to_date', toDate);
+          if (district) params.append('district', district);
+          if (search.trim()) params.append('search', search.trim());
+
+          const res = await fetch(`${API_BASE}/complaints/not-processed?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to fetch complaints');
+          setRecords(data.records || []);
+          setPagination(data.pagination || { page: 1, limit: 15, total: 0, totalPages: 1 });
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setLoading(false);
+        }
+      }, [token, fromDate, toDate, district, search, pagination.limit]);
+
+      useEffect(() => {
+        if (token) fetchRecords(1);
+      }, [token]);
+
+      const handleFilterSubmit = (e) => {
+        e.preventDefault();
+        fetchRecords(1);
+      };
+
+      const handleExcelExport = () => {
+        const params = new URLSearchParams({ status: 'not_processed' });
+        if (fromDate) params.append('from_date', fromDate);
+        if (toDate) params.append('to_date', toDate);
+        if (district) params.append('district', district);
+        if (search) params.append('search', search);
+
+        window.open(`${API_BASE}/complaints/export/excel?${params.toString()}&token=${token}`, '_blank');
+      };
+
+      return (
+        <div className="space-y-4">
+          {/* Legacy Lavender Header Block matching notprocess-complaint.php */}
+          <div className="lavender-box rounded-lg p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <span>Not Processed Complaints Queue</span>
+                <span className="text-xs bg-red-600 text-white font-bold px-2 py-0.5 rounded">PRIORITY</span>
+              </h2>
+              <p className="text-xs text-slate-600">Complaints awaiting initial verification, field division forwarding, or frivolous disposal.</p>
+            </div>
+            <div>
+              <button
+                type="button"
+                onClick={handleExcelExport}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded shadow flex items-center gap-2 transition"
+              >
+                <i className="fa-solid fa-file-excel"></i> Export To Excel
+              </button>
+            </div>
+          </div>
+
+          {/* Date Filter & Search Form */}
+          <form onSubmit={handleFilterSubmit} className="lavender-box rounded-lg p-4 shadow-sm flex flex-wrap items-center gap-3 text-xs font-semibold">
+            <span className="text-slate-800 uppercase font-bold flex items-center gap-1.5">
+              <i className="fa-regular fa-calendar-days"></i> Select Dates:
+            </span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="border border-slate-300 rounded px-2.5 py-1.5 text-xs bg-white text-slate-800"
+              placeholder="FROM DATE"
+            />
+            <span className="text-slate-500">to</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="border border-slate-300 rounded px-2.5 py-1.5 text-xs bg-white text-slate-800"
+              placeholder="TO DATE"
+            />
+
+            {/* District Dropdown */}
+            <select
+              value={district}
+              onChange={(e) => setDistrict(e.target.value)}
+              className="border border-slate-300 rounded px-2.5 py-1.5 text-xs bg-white text-slate-800 max-w-[160px]"
+            >
+              <option value="">All Districts</option>
+              {districts.map(d => (
+                <option key={d.id} value={d.stateName}>{d.stateName}</option>
+              ))}
+            </select>
+
+            {/* Free Text Search */}
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="border border-slate-300 rounded px-2.5 py-1.5 text-xs bg-white text-slate-800 flex-1 min-w-[140px]"
+              placeholder="Search Ticket, Name, Address..."
+            />
+
+            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-1.5 rounded transition">
+              FILTER
+            </button>
+            {(fromDate || toDate || district || search) && (
+              <button
+                type="button"
+                onClick={() => { setFromDate(''); setToDate(''); setDistrict(''); setSearch(''); setTimeout(() => fetchRecords(1), 0); }}
+                className="bg-slate-400 hover:bg-slate-500 text-white font-bold px-3 py-1.5 rounded transition"
+              >
+                Reset
+              </button>
+            )}
+          </form>
+
+          {/* Data Table with Exact 9 Column Headers */}
+          <div className="bg-white rounded-lg shadow border border-slate-200 overflow-x-auto">
+            {loading ? (
+              <div className="p-12 text-center text-slate-500 font-semibold">
+                <i className="fa-solid fa-spinner fa-spin text-2xl mb-2 text-teal-600"></i>
+                <p>Loading grievances from cms_dev database...</p>
+              </div>
+            ) : records.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 font-semibold">
+                <i className="fa-solid fa-folder-open text-3xl mb-2 text-slate-400"></i>
+                <p>No complaints found matching the current filter criteria.</p>
+              </div>
+            ) : (
+              <table className="w-full text-left text-xs text-slate-800 divide-y divide-slate-200">
+                <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+                  <tr>
+                    <th className="px-3 py-3 border-r border-slate-200">Complaint No.</th>
+                    <th className="px-3 py-3 border-r border-slate-200">Name</th>
+                    <th className="px-3 py-3 border-r border-slate-200">Address</th>
+                    <th className="px-3 py-3 border-r border-slate-200">District</th>
+                    <th className="px-3 py-3 border-r border-slate-200">DIV/Substation</th>
+                    <th className="px-3 py-3 border-r border-slate-200 min-w-[200px]">Complaint Details</th>
+                    <th className="px-3 py-3 border-r border-slate-200 text-center">Complain File</th>
+                    <th className="px-3 py-3 border-r border-slate-200 whitespace-nowrap">Reg. Date</th>
+                    <th className="px-3 py-3 text-center min-w-[160px]">Status/Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 font-medium">
+                  {records.map((r, idx) => (
+                    <tr key={r.complaintNumber} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50 hover:bg-slate-100 transition'}>
+                      <td className="px-3 py-2.5 font-bold font-mono text-teal-700 border-r border-slate-200 whitespace-nowrap">
+                        #{r.complaintNumber}
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold text-slate-900 border-r border-slate-200">
+                        {r.thiefname}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-700 border-r border-slate-200 max-w-[200px] truncate" title={r.thiefaddress}>
+                        {r.thiefaddress}
+                      </td>
+                      <td className="px-3 py-2.5 font-medium border-r border-slate-200 whitespace-nowrap">
+                        {r.district || 'N/A'}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                        {r.substn || r.sdivision || 'N/A'}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-700 border-r border-slate-200 line-clamp-2" title={r.complaintDetails}>
+                        {r.complaintDetails || 'None'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center border-r border-slate-200 whitespace-nowrap">
+                        {r.complaintFile && r.complaintFile !== 'NULL' ? (
+                          <a
+                            href={`/uploads/complaintdocs/${r.complaintFile}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:text-blue-800 font-semibold underline flex items-center justify-center gap-1"
+                          >
+                            <i className="fa-solid fa-paperclip"></i> View File
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 italic">File NA</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600 border-r border-slate-200 whitespace-nowrap font-mono text-[11px]">
+                        {r.regDate}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <div className="flex flex-col items-center gap-1.5">
+                          <span className="font-bold text-[10px] tracking-wider text-red-600 uppercase">
+                            {r.status === 'forward' ? 'FORWARDED' : 'NOT PROCESSED'}
+                          </span>
+                          <div className="flex flex-wrap items-center justify-center gap-1">
+                            {/* View Details Button */}
+                            <button
+                              type="button"
+                              onClick={() => setDossierCid(r.complaintNumber)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-2 py-1 rounded"
+                            >
+                              View Details
+                            </button>
+
+                            {/* Super Admin Direct Forwarding Button */}
+                            {user?.role === 'SUPER_ADMIN' && (
+                              <button
+                                type="button"
+                                onClick={() => setForwardModalData(r)}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] px-2 py-1 rounded flex items-center gap-1"
+                                title="Forward directly to Level 4 Field Division"
+                              >
+                                <i className="fa-solid fa-share"></i> Forward
+                              </button>
+                            )}
+
+                            {/* Super Admin / Division Frivolous Dismissal */}
+                            {(!user?.isReadOnly) && (
+                              <button
+                                type="button"
+                                onClick={() => setFrivolousModalData(r)}
+                                className="bg-slate-700 hover:bg-slate-800 text-white font-bold text-[10px] px-2 py-1 rounded"
+                                title="Close as Frivolous/Baseless"
+                              >
+                                Frivolous
+                              </button>
+                            )}
+
+                            {/* Take Action / Update Button (Opening upclosedcomplaint.php modal) */}
+                            {(!user?.isReadOnly) && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setActionModalData(r)}
+                                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-[10px] px-2 py-1 rounded"
+                                  title="Update Status / Record FIR Enforcement (In-page Modal)"
+                                >
+                                  Take Action
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => window.open(`/upclosedcomplaint.html?cid=${r.complaintNumber}`, 'popUpWin', 'width=600,height=650,scrollbars=yes,resizable=yes')}
+                                  className="bg-slate-700 hover:bg-slate-800 text-white font-bold text-[10px] px-1.5 py-1 rounded"
+                                  title="Open authentic legacy pop-up window (upclosedcomplaint.php)"
+                                >
+                                  <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* Pagination Controls */}
+            {pagination.totalPages > 1 && (
+              <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+                <div>
+                  Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} complaints
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    disabled={pagination.page <= 1}
+                    onClick={() => fetchRecords(pagination.page - 1)}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-semibold disabled:opacity-50"
+                  >
+                    Prev
+                  </button>
+                  <span className="px-2 py-1 font-bold text-teal-700">
+                    Page {pagination.page} of {pagination.totalPages}
+                  </span>
+                  <button
+                    disabled={pagination.page >= pagination.totalPages}
+                    onClick={() => fetchRecords(pagination.page + 1)}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-semibold disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Modal 1: Forward to Division Modal */}
+          {forwardModalData && (
+            <ForwardToDivisionModal
+              complaint={forwardModalData}
+              token={token}
+              notify={notify}
+              onClose={() => setForwardModalData(null)}
+              onSuccess={() => {
+                setForwardModalData(null);
+                fetchRecords(pagination.page);
+                refreshBadgeCounts();
+              }}
+            />
+          )}
+
+          {/* Modal 2: Close as Frivolous Modal */}
+          {frivolousModalData && (
+            <CloseFrivolousModal
+              complaint={frivolousModalData}
+              token={token}
+              notify={notify}
+              onClose={() => setFrivolousModalData(null)}
+              onSuccess={() => {
+                setFrivolousModalData(null);
+                fetchRecords(pagination.page);
+                refreshBadgeCounts();
+              }}
+            />
+          )}
+
+          {/* Modal 3: Full Field Enforcement Modal (upclosedcomplaint.php) */}
+          {actionModalData && (
+            <ComplaintActionModal
+              complaint={actionModalData}
+              token={token}
+              notify={notify}
+              onClose={() => setActionModalData(null)}
+              onSuccess={() => {
+                setActionModalData(null);
+                fetchRecords(pagination.page);
+                refreshBadgeCounts();
+              }}
+            />
+          )}
+
+          {/* Modal 4: Chronological Dossier Timeline */}
+          {dossierCid && (
+            <ComplaintDossierModal
+              cid={dossierCid}
+              token={token}
+              notify={notify}
+              onClose={() => setDossierCid(null)}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 2. FORWARD DIRECTLY TO DIVISION MODAL
+    // =========================================================================
+    function ForwardToDivisionModal({ complaint, token, notify, onClose, onSuccess }) {
+      const [officers, setOfficers] = useState([]);
+      const [selectedDiscom, setSelectedDiscom] = useState('ALL');
+      const [targetDivision, setTargetDivision] = useState('');
+      const [remark, setRemark] = useState('');
+      const [submitting, setSubmitting] = useState(false);
+
+      useEffect(() => {
+        fetch(`${API_BASE}/complaints/meta/division-officers`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data.officers) {
+              setOfficers(data.officers);
+              if (data.officers.length > 0) setTargetDivision(data.officers[0].username);
+            }
+          })
+          .catch(e => {});
+      }, [token]);
+
+      const filteredOfficers = useMemo(() => {
+        if (selectedDiscom === 'ALL') return officers;
+        return officers.filter(o => o.DISCOM === selectedDiscom);
+      }, [officers, selectedDiscom]);
+
+      const handleDiscomChange = (discom) => {
+        setSelectedDiscom(discom);
+        const filtered = discom === 'ALL' ? officers : officers.filter(o => o.DISCOM === discom);
+        if (filtered.length > 0) setTargetDivision(filtered[0].username);
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!remark.trim()) return notify('Forwarding instructions are mandatory.', 'error');
+        setSubmitting(true);
+        try {
+          const res = await fetch(`${API_BASE}/complaints/${complaint.complaintNumber}/forward-to-division`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              target_division: targetDivision,
+              remark: remark.trim()
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to forward complaint');
+          notify(`Complaint #${complaint.complaintNumber} forwarded directly to ${targetDivision}`);
+          onSuccess();
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden">
+            <div className="bg-indigo-900 text-white p-4 flex items-center justify-between">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <i className="fa-solid fa-share"></i> Direct Forwarding &mdash; Ticket #{complaint.complaintNumber}
+              </h3>
+              <button onClick={onClose} className="text-slate-300 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs font-semibold">
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-1">
+                    <label className="text-slate-700 block mb-1">DISCOM:</label>
+                    <select
+                      value={selectedDiscom}
+                      onChange={(e) => handleDiscomChange(e.target.value)}
+                      className="w-full border border-slate-300 rounded p-2 text-xs bg-white text-slate-800 font-bold"
+                    >
+                      <option value="ALL">All (435)</option>
+                      <option value="DVVNL">DVVNL</option>
+                      <option value="KeSCO">KeSCO</option>
+                      <option value="MVVNL">MVVNL</option>
+                      <option value="PuVVNL">PuVVNL</option>
+                      <option value="PVVNL">PVVNL</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-slate-700 block mb-1">Target Field Division (Username):</label>
+                    <select
+                      value={targetDivision}
+                      onChange={(e) => setTargetDivision(e.target.value)}
+                      className="w-full border border-slate-300 rounded p-2 text-xs bg-white text-slate-800 font-bold"
+                      required
+                    >
+                      {filteredOfficers.map(o => (
+                        <option key={o.id} value={o.username}>
+                          {o.username} &mdash; {o.DISCOM} {o.zone ? `(${o.zone})` : ''} {o.circle ? `[${o.circle}]` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="text-[10px] text-slate-500 font-normal">
+                  Showing {filteredOfficers.length} divisional accounts in dropdown.
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-700 block mb-1">Forwarding Directive & Raid Instructions:</label>
+                <textarea
+                  rows="3"
+                  value={remark}
+                  onChange={(e) => setRemark(e.target.value)}
+                  placeholder="Enter specific instructions for field inspection..."
+                  className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                  required
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded font-bold text-slate-700">Cancel</button>
+                <button type="submit" disabled={submitting} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded flex items-center gap-2">
+                  {submitting && <i className="fa-solid fa-spinner fa-spin"></i>}
+                  <span>Execute Forwarding</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 3. CLOSE AS FRIVOLOUS MODAL
+    // =========================================================================
+    function CloseFrivolousModal({ complaint, token, notify, onClose, onSuccess }) {
+      const [remark, setRemark] = useState('');
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!remark.trim()) return notify('Explanatory remark is mandatory.', 'error');
+        setSubmitting(true);
+        try {
+          const res = await fetch(`${API_BASE}/complaints/${complaint.complaintNumber}/close-frivolous`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ remark: remark.trim() })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to close complaint as frivolous');
+          notify(`Complaint #${complaint.complaintNumber} marked as Frivolous and closed.`);
+          onSuccess();
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+            <div className="bg-slate-800 text-white p-4 flex items-center justify-between">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <i className="fa-solid fa-ban text-red-400"></i> Close as Frivolous &mdash; Ticket #{complaint.complaintNumber}
+              </h3>
+              <button onClick={onClose} className="text-slate-300 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs font-semibold">
+              <p className="text-slate-600">
+                You are about to dismiss this complaint as fake, anonymous without actionable location, or unsubstantiated. This will mark the grievance as Closed under category <span className="font-bold text-red-600">Frivolous</span>.
+              </p>
+              <div>
+                <label className="text-slate-700 block mb-1">Dismissal Reason / Officer Finding:</label>
+                <textarea
+                  rows="3"
+                  value={remark}
+                  onChange={(e) => setRemark(e.target.value)}
+                  placeholder="e.g. स्थल निरीक्षण में कोई पता नहीं मिला / फर्जी शिकायत"
+                  className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                  required
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded font-bold text-slate-700">Cancel</button>
+                <button type="submit" disabled={submitting} className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded flex items-center gap-2">
+                  {submitting && <i className="fa-solid fa-spinner fa-spin"></i>}
+                  <span>Confirm Dismissal</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 4. FIELD ENFORCEMENT & DYNAMIC OUTCOME MODAL (upclosedcomplaint.php)
+    // =========================================================================
+    function ComplaintActionModal({ complaint, token, notify, onClose, onSuccess }) {
+      const [status, setStatus] = useState('closed');
+      const [info, setInfo] = useState('Theft Found & FIR Done');
+      const [remark, setRemark] = useState('');
+
+      // Sub-fields for Theft Found & FIR
+      const [cat, setCat] = useState('lmv2');
+      const [loads, setLoads] = useState('2.5');
+      const [assess, setAssess] = useState('35000');
+      const [reali, setReali] = useState('10000');
+
+      // Sub-fields for Wrong Tariff
+      const [scat, setScat] = useState('lmv1');
+      const [acat, setAcat] = useState('lmv2');
+      const [sload, setSload] = useState('1.0');
+      const [aload, setAload] = useState('3.0');
+
+      // Sub-fields for Duplicate
+      const [cn, setCn] = useState('');
+
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!remark.trim()) return notify('Inspection remark is mandatory.', 'error');
+        setSubmitting(true);
+
+        const payload = {
+          status,
+          remark: remark.trim()
+        };
+
+        if (status === 'closed') {
+          payload.info = info;
+
+          if (info === 'Theft Found & FIR Done') {
+            payload.category = cat;
+            payload.loads = loads;
+            payload.assess = assess;
+            payload.reali = reali;
+          } else if (info === 'Wrong Tariff') {
+            payload.scat = scat;
+            payload.acat = acat;
+            payload.sload = sload;
+            payload.aload = aload;
+            payload.assess = assess;
+            payload.reali = reali;
+          } else if (info === 'Load Enhancement Case') {
+            payload.sload = sload;
+            payload.aload = aload;
+          } else if (info === 'Duplicate') {
+            payload.cn = cn;
+          }
+        }
+
+        try {
+          const res = await fetch(`${API_BASE}/complaints/${complaint.complaintNumber}/update-status`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to update complaint');
+          notify(`Complaint #${complaint.complaintNumber} updated successfully (${status} - ${info || ''})`);
+          onSuccess();
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="bg-teal-800 text-white p-4 flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <i className="fa-solid fa-gavel"></i> Enforcement & Action Form &mdash; Ticket #{complaint.complaintNumber}
+              </h3>
+              <button onClick={onClose} className="text-slate-300 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs font-semibold overflow-y-auto flex-1">
+              {/* Status Dropdown */}
+              <div>
+                <label className="text-slate-700 block mb-1">Select Status:</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-2 text-xs bg-white text-slate-800 font-bold"
+                  required
+                >
+                  <option value="closed">Close Complaint</option>
+                </select>
+              </div>
+
+              {/* Theft Info Dropdown when status = closed */}
+              {status === 'closed' && (
+                <div>
+                  <label className="text-slate-700 block mb-1">Theft Info / Enforcement Verdict:</label>
+                  <select
+                    value={info}
+                    onChange={(e) => setInfo(e.target.value)}
+                    className="w-full border border-teal-500 rounded p-2 text-xs bg-teal-50 text-teal-900 font-bold"
+                    required
+                  >
+                    <option value="Theft Found & FIR Done">Theft Found & FIR Done (चोरी पुष्ट एवं एफआईआर दर्ज)</option>
+                    <option value="Wrong Tariff">Wrong Tariff (गलत टैरिफ)</option>
+                    <option value="Load Enhancement Case">Load Enhancement Case (लोड वृद्धि केस)</option>
+                    <option value="Duplicate">Duplicate (पुनरावृत्ति शिकायत)</option>
+                    <option value="Theft Not Found">Theft Not Found (मौके पर चोरी नहीं पाई गई / वैध कनेक्शन)</option>
+                    <option value="Frivolous">Frivolous (फर्जी/आधारहीन)</option>
+                    <option value="Reading Storage Case">Reading Storage Case (रीडिंग स्टोर केस)</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Conditional Sub-Form 1: Theft Found & FIR Done */}
+              {status === 'closed' && info === 'Theft Found & FIR Done' && (
+                <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 space-y-3">
+                  <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                    <i className="fa-solid fa-file-shield text-amber-600"></i> FIR & Penalty Parameters
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Category:</label>
+                      <select value={cat} onChange={(e) => setCat(e.target.value)} className="w-full border border-slate-300 rounded p-1.5 bg-white text-xs">
+                        <option value="lmv1">LMV1 Domestic</option>
+                        <option value="lmv2">LMV2 Commercial</option>
+                        <option value="lmv4">LMV4 Institutional</option>
+                        <option value="lmv5">LMV5 Agriculture</option>
+                        <option value="lmv6">LMV6 Industrial</option>
+                        <option value="hv1">HV1 Bulk</option>
+                        <option value="hv2">HV2 Heavy</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Detected Load (kW):</label>
+                      <input type="number" step="any" value={loads} onChange={(e) => setLoads(e.target.value)} className="w-full border border-slate-300 rounded p-1.5 bg-white text-xs" required />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Assessment Penalty (₹):</label>
+                      <input type="number" value={assess} onChange={(e) => setAssess(e.target.value)} className="w-full border border-slate-300 rounded p-1.5 bg-white text-xs font-mono font-bold" required />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Realized Revenue (₹):</label>
+                      <input type="number" value={reali} onChange={(e) => setReali(e.target.value)} className="w-full border border-slate-300 rounded p-1.5 bg-white text-xs font-mono font-bold text-emerald-700" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Conditional Sub-Form 2: Wrong Tariff */}
+              {status === 'closed' && info === 'Wrong Tariff' && (
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 space-y-3">
+                  <div className="font-bold text-blue-900">Tariff Differential Parameters</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Sanctioned Category:</label>
+                      <select value={scat} onChange={(e) => setScat(e.target.value)} className="w-full border border-slate-300 rounded p-1.5 bg-white text-xs">
+                        <option value="lmv1">LMV1 Domestic</option>
+                        <option value="lmv5">LMV5 Agriculture</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Actual Category Detected:</label>
+                      <select value={acat} onChange={(e) => setAcat(e.target.value)} className="w-full border border-slate-300 rounded p-1.5 bg-white text-xs font-bold text-blue-900">
+                        <option value="lmv2">LMV2 Commercial</option>
+                        <option value="lmv6">LMV6 Industrial</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Sanctioned Load (kW):</label>
+                      <input type="number" step="any" value={sload} onChange={(e) => setSload(e.target.value)} className="w-full border border-slate-300 rounded p-1.5 bg-white text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Actual Load (kW):</label>
+                      <input type="number" step="any" value={aload} onChange={(e) => setAload(e.target.value)} className="w-full border border-slate-300 rounded p-1.5 bg-white text-xs font-bold" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Conditional Sub-Form 3: Duplicate */}
+              {status === 'closed' && info === 'Duplicate' && (
+                <div className="bg-slate-100 p-3 rounded-lg border border-slate-300">
+                  <label className="text-slate-700 block mb-1">Master Complaint Reference ID (cn):</label>
+                  <input
+                    type="number"
+                    value={cn}
+                    onChange={(e) => setCn(e.target.value)}
+                    placeholder="Enter original Complaint No. e.g. 8284"
+                    className="w-full border border-slate-300 rounded p-2 text-xs font-mono font-bold"
+                    required
+                  />
+                </div>
+              )}
+
+              {/* Mandatory Remark Area */}
+              <div>
+                <label className="text-slate-700 block mb-1">Investigation Remark / Site Notes:</label>
+                <textarea
+                  rows="3"
+                  value={remark}
+                  onChange={(e) => setRemark(e.target.value)}
+                  placeholder="Enter detailed report of site inspection and enforcement action..."
+                  className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                  required
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 shrink-0">
+                <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded font-bold text-slate-700">Cancel</button>
+                <button type="submit" disabled={submitting} className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded flex items-center gap-2">
+                  {submitting && <i className="fa-solid fa-spinner fa-spin"></i>}
+                  <span>Save Enforcement Action</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 5. COMPLAINT DOSSIER TIMELINE MODAL (complaint-details.php)
+    // =========================================================================
+    function ComplaintDossierModal({ cid, token, notify, onClose }) {
+      const [data, setData] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`${API_BASE}/complaints/${cid}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(r => r.json())
+          .then(d => setData(d))
+          .catch(e => notify(e.message, 'error'))
+          .finally(() => setLoading(false));
+      }, [cid, token]);
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <i className="fa-solid fa-folder-open text-teal-400"></i> Complaint Dossier & Audit Timeline &mdash; #{cid}
+              </h3>
+              <button onClick={onClose} className="text-slate-300 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-5 text-xs text-slate-800 flex-1">
+              {loading ? (
+                <div className="p-8 text-center text-slate-500 font-semibold"><i className="fa-solid fa-spinner fa-spin text-xl mb-2"></i> Loading dossier...</div>
+              ) : !data || !data.complaint ? (
+                <div className="p-8 text-center text-red-500 font-semibold">Complaint not found or access denied.</div>
+              ) : (
+                <>
+                  {/* Complaint Details Card */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                      <span className="font-bold text-slate-900 text-sm">Offender / Premises Record</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800 uppercase">{data.complaint.status || 'NOT PROCESSED'}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div><span className="text-slate-500">Accused Name:</span> <span className="font-bold">{data.complaint.thiefname}</span></div>
+                      <div><span className="text-slate-500">District:</span> <span className="font-bold">{data.complaint.district}</span></div>
+                      <div className="col-span-2"><span className="text-slate-500">Address:</span> <span className="font-bold">{data.complaint.thiefaddress}</span></div>
+                      <div><span className="text-slate-500">Registration Date:</span> <span className="font-mono">{data.complaint.regDate}</span></div>
+                      <div><span className="text-slate-500">Assigned Division:</span> <span className="font-bold text-indigo-700">{data.complaint.assigned_username || data.complaint.username || 'Unassigned'}</span></div>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-slate-200">
+                      <span className="text-slate-500 block mb-1">Grievance Narrative:</span>
+                      <p className="bg-white p-2.5 rounded border border-slate-200 text-slate-800 italic">{data.complaint.complaintDetails}</p>
+                    </div>
+                  </div>
+
+                  {/* Chronological Remarks Timeline */}
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm mb-3 flex items-center gap-2">
+                      <i className="fa-solid fa-timeline text-indigo-600"></i> Chronological Investigation Timeline
+                    </h4>
+                    {data.timeline && data.timeline.length > 0 ? (
+                      <div className="space-y-3 relative pl-4 border-l-2 border-slate-200 ml-2">
+                        {data.timeline.map((item, idx) => (
+                          <div key={item.id} className="relative bg-white border border-slate-200 rounded p-3 shadow-sm text-xs">
+                            <div className="absolute -left-[23px] top-3.5 w-3 h-3 bg-teal-600 rounded-full border-2 border-white"></div>
+                            <div className="flex items-center justify-between font-bold mb-1">
+                              <span className="text-teal-700">{item.info || item.status.toUpperCase()}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">{item.remarkDate}</span>
+                            </div>
+                            <p className="text-slate-800 mb-2">{item.remark}</p>
+                            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 bg-slate-50 p-1.5 rounded">
+                              <span>Officer: <b className="text-slate-700">{item.username || 'admin'}</b></span>
+                              {item.category && <span>Category: <b className="text-slate-700">{item.category}</b></span>}
+                              {item.loads && <span>Load: <b className="text-slate-700">{item.loads} kW</b></span>}
+                              {item.assess && <span>Assessed: <b className="text-amber-800">₹{item.assess}</b></span>}
+                              {item.reali && <span>Realized: <b className="text-emerald-800">₹{item.reali}</b></span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-slate-400 italic">No investigation remarks recorded yet.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+              <button onClick={onClose} className="px-4 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded font-bold text-xs">Close Dossier</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 6. GENERIC QUEUE VIEW (In Process & Closed Complaints)
+    // =========================================================================
+    function ComplaintQueueView({ queueType, title, subtitle, statusBadge, token, user, districts, notify, refreshBadgeCounts }) {
+      const [records, setRecords] = useState([]);
+      const [pagination, setPagination] = useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+      const [loading, setLoading] = useState(true);
+      const [dossierCid, setDossierCid] = useState(null);
+      const [actionModalData, setActionModalData] = useState(null);
+
+      const fetchRecords = useCallback(async (page = 1) => {
+        setLoading(true);
+        try {
+          const res = await fetch(`${API_BASE}/complaints/${queueType}?page=${page}&limit=${pagination.limit}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to fetch complaints');
+          setRecords(data.records || []);
+          setPagination(data.pagination || { page: 1, limit: 15, total: 0, totalPages: 1 });
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setLoading(false);
+        }
+      }, [queueType, token, pagination.limit]);
+
+      useEffect(() => {
+        fetchRecords(1);
+      }, [queueType, token]);
+
+      return (
+        <div className="space-y-4">
+          <div className="bg-white rounded-lg p-4 shadow-sm border border-slate-200 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">{title}</h2>
+              <p className="text-xs text-slate-600">{subtitle}</p>
+            </div>
+            <span className="text-xs bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded">
+              Total: {pagination.total}
+            </span>
+          </div>
+
+          <div className="bg-white rounded-lg shadow border border-slate-200 overflow-x-auto">
+            {loading ? (
+              <div className="p-12 text-center text-slate-500 font-semibold"><i className="fa-solid fa-spinner fa-spin text-2xl mb-2 text-teal-600"></i> Loading records...</div>
+            ) : records.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 font-semibold">No complaints in this register.</div>
+            ) : (
+              <table className="w-full text-left text-xs text-slate-800 divide-y divide-slate-200">
+                <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+                  <tr>
+                    <th className="px-3 py-3">Complaint No.</th>
+                    <th className="px-3 py-3">Name</th>
+                    <th className="px-3 py-3">District</th>
+                    <th className="px-3 py-3">Details</th>
+                    <th className="px-3 py-3">Assigned Officer</th>
+                    {queueType === 'closed' && <th className="px-3 py-3">Enforcement Outcome</th>}
+                    {queueType === 'closed' && <th className="px-3 py-3 text-right">Assessed (₹)</th>}
+                    {queueType === 'closed' && <th className="px-3 py-3 text-right">Realized (₹)</th>}
+                    <th className="px-3 py-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {records.map((r, idx) => (
+                    <tr key={r.complaintNumber} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                      <td className="px-3 py-2.5 font-bold font-mono text-teal-700">#{r.complaintNumber}</td>
+                      <td className="px-3 py-2.5 font-semibold">{r.thiefname}</td>
+                      <td className="px-3 py-2.5">{r.district}</td>
+                      <td className="px-3 py-2.5 max-w-[200px] truncate" title={r.complaintDetails}>{r.complaintDetails}</td>
+                      <td className="px-3 py-2.5 font-mono text-slate-600">{r.assigned_username || 'None'}</td>
+                      {queueType === 'closed' && (
+                        <td className="px-3 py-2.5 font-bold text-teal-800">{r.enforcement_verdict || 'Closed'}</td>
+                      )}
+                      {queueType === 'closed' && (
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-amber-700">₹{r.penalty_assessed || 0}</td>
+                      )}
+                      {queueType === 'closed' && (
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700">₹{r.penalty_realized || 0}</td>
+                      )}
+                      <td className="px-3 py-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setDossierCid(r.complaintNumber)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-2 py-1 rounded"
+                          >
+                            Dossier
+                          </button>
+                          {queueType === 'forwarded' && !user?.isReadOnly && (
+                            <>
+                              <button
+                                onClick={() => setActionModalData(r)}
+                                className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-[10px] px-2 py-1 rounded"
+                              >
+                                Resolve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => window.open(`/upclosedcomplaint.html?cid=${r.complaintNumber}`, 'popUpWin', 'width=600,height=650,scrollbars=yes,resizable=yes')}
+                                className="bg-slate-700 hover:bg-slate-800 text-white font-bold text-[10px] px-1.5 py-1 rounded"
+                                title="Open authentic legacy pop-up window"
+                              >
+                                <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {dossierCid && (
+            <ComplaintDossierModal cid={dossierCid} token={token} notify={notify} onClose={() => setDossierCid(null)} />
+          )}
+
+          {actionModalData && (
+            <ComplaintActionModal
+              complaint={actionModalData}
+              token={token}
+              notify={notify}
+              onClose={() => setActionModalData(null)}
+              onSuccess={() => {
+                setActionModalData(null);
+                fetchRecords(pagination.page);
+                refreshBadgeCounts();
+              }}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 7. DISCOM MIS REPORT VIEW (report.php)
+    // =========================================================================
+    function MISReportView({ token, notify }) {
+      const [report, setReport] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`${API_BASE}/complaints/reports/discom-summary`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(r => r.json())
+          .then(d => setReport(d.report || []))
+          .catch(e => notify(e.message, 'error'))
+          .finally(() => setLoading(false));
+      }, [token]);
+
+      return (
+        <div className="space-y-4">
+          <div className="bg-white rounded-lg p-4 shadow-sm border border-slate-200 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <i className="fa-solid fa-chart-pie text-purple-600"></i> DISCOM Executive MIS Performance Matrix
+              </h2>
+              <p className="text-xs text-slate-600">Replaces report.php with distinct financial recovery and compounding assessments.</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow border border-slate-200 overflow-x-auto">
+            {loading ? (
+              <div className="p-12 text-center text-slate-500 font-semibold"><i className="fa-solid fa-spinner fa-spin text-2xl mb-2 text-teal-600"></i> Computing metrics...</div>
+            ) : (
+              <table className="w-full text-left text-xs text-slate-800 divide-y divide-slate-200">
+                <thead className="bg-slate-900 text-white font-bold uppercase text-[11px]">
+                  <tr>
+                    <th className="px-3 py-3">DISCOM</th>
+                    <th className="px-3 py-3 text-right">Total Received</th>
+                    <th className="px-3 py-3 text-right">Forwarded</th>
+                    <th className="px-3 py-3 text-right">In Process</th>
+                    <th className="px-3 py-3 text-right">Closed</th>
+                    <th className="px-3 py-3 text-right">Theft FIRs</th>
+                    <th className="px-3 py-3 text-right text-amber-300">Assessment (₹ Cr)</th>
+                    <th className="px-3 py-3 text-right text-emerald-300">Realisation (₹ Cr)</th>
+                    <th className="px-3 py-3 text-right">Recovery Rate</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 font-semibold">
+                  {report.map(r => (
+                    <tr key={r.discom} className="hover:bg-slate-50 transition">
+                      <td className="px-3 py-3 font-bold text-indigo-900 text-sm">{r.discom}</td>
+                      <td className="px-3 py-3 text-right font-mono">{r.totalReceived}</td>
+                      <td className="px-3 py-3 text-right font-mono text-blue-700">{r.forwarded}</td>
+                      <td className="px-3 py-3 text-right font-mono text-amber-700">{r.inProcess}</td>
+                      <td className="px-3 py-3 text-right font-mono text-emerald-700">{r.closed}</td>
+                      <td className="px-3 py-3 text-right font-mono text-purple-700">{r.firCases}</td>
+                      <td className="px-3 py-3 text-right font-mono text-amber-700 font-bold">₹{r.totalAssessmentCr} Cr</td>
+                      <td className="px-3 py-3 text-right font-mono text-emerald-700 font-bold">₹{r.totalRealizationCr} Cr</td>
+                      <td className="px-3 py-3 text-right font-mono">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${r.recoveryRatio >= 50 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                          {r.recoveryRatio}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 8. DISTRICT SUMMARY VIEW (view.php)
+    // =========================================================================
+    function DistrictSummaryView({ token, notify }) {
+      const [summary, setSummary] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`${API_BASE}/complaints/reports/district-summary`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(r => r.json())
+          .then(d => setSummary(d.summary || []))
+          .catch(e => notify(e.message, 'error'))
+          .finally(() => setLoading(false));
+      }, [token]);
+
+      return (
+        <div className="space-y-4">
+          <div className="bg-white rounded-lg p-4 shadow-sm border border-slate-200 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <i className="fa-solid fa-map-location-dot text-indigo-600"></i> District Wise Grievance Summary
+              </h2>
+              <p className="text-xs text-slate-600">Replaces view.php covering all 75 Uttar Pradesh administrative districts.</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow border border-slate-200 overflow-x-auto max-h-[75vh]">
+            {loading ? (
+              <div className="p-12 text-center text-slate-500 font-semibold"><i className="fa-solid fa-spinner fa-spin text-2xl mb-2 text-teal-600"></i> Loading districts...</div>
+            ) : (
+              <table className="w-full text-left text-xs text-slate-800 divide-y divide-slate-200 sticky-header">
+                <thead className="bg-slate-800 text-white font-bold uppercase text-[11px] sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2.5">S.No</th>
+                    <th className="px-3 py-2.5">District Name</th>
+                    <th className="px-3 py-2.5">Jurisdiction Zone</th>
+                    <th className="px-3 py-2.5 text-right">Received</th>
+                    <th className="px-3 py-2.5 text-right">Not Processed</th>
+                    <th className="px-3 py-2.5 text-right">In Process</th>
+                    <th className="px-3 py-2.5 text-right">Closed</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {summary.map((d, idx) => (
+                    <tr key={d.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                      <td className="px-3 py-2 font-mono text-slate-500">{idx + 1}</td>
+                      <td className="px-3 py-2 font-bold text-slate-900">{d.district}</td>
+                      <td className="px-3 py-2 text-slate-600">{d.region || 'UP'}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold">{d.totalReceived}</td>
+                      <td className="px-3 py-2 text-right font-mono text-red-600 font-bold">{d.notProcessed}</td>
+                      <td className="px-3 py-2 text-right font-mono text-blue-600">{d.inProcess}</td>
+                      <td className="px-3 py-2 text-right font-mono text-emerald-600 font-bold">{d.closed}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 9. PUBLIC THEFT GRIEVANCE FILING (register-complaint2.php)
+    // =========================================================================
+    function PublicRegisterView({ districts, notify, onSubmitted }) {
+      const [name, setName] = useState('');
+      const [address, setAddress] = useState('');
+      const [district, setDistrict] = useState('LUCKNOW (लखनऊ)');
+      const [substation, setSubstation] = useState('');
+      const [details, setDetails] = useState('');
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setSubmitting(true);
+        try {
+          const res = await fetch(`${API_BASE}/complaints/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              thiefname: name,
+              thiefaddress: address,
+              district,
+              substn: substation,
+              complaintDetails: details
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to submit grievance');
+          notify(`Grievance #${data.complaintNumber} registered successfully! Routed to Not Processed queue.`);
+          onSubmitted();
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-md border border-slate-200 overflow-hidden">
+          <div className="bg-slate-900 text-white p-5">
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <i className="fa-solid fa-bolt text-teal-400"></i> Public Electricity Theft Grievance Submission
+            </h2>
+            <p className="text-xs text-slate-300 mt-1">
+              Replaces register-complaint2.php with parameterized input and immediate routing to the Not Processed queue.
+            </p>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs font-semibold">
+            <div>
+              <label className="text-slate-700 block mb-1">Accused Person / Commercial Establishment Name *:</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. M/s Royal Ice Factory or Consumer Name"
+                className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-slate-700 block mb-1">Exact Address / Location / Pole Reference *:</label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="House no, street, landmark, village, nearest electricity pole..."
+                className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-slate-700 block mb-1">District *:</label>
+                <select
+                  value={district}
+                  onChange={(e) => setDistrict(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-2 text-xs bg-white text-slate-800"
+                  required
+                >
+                  {districts.map(d => (
+                    <option key={d.id} value={d.stateName}>{d.stateName}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-slate-700 block mb-1">33/11 kV Substation (if known):</label>
+                <input
+                  type="text"
+                  value={substation}
+                  onChange={(e) => setSubstation(e.target.value)}
+                  placeholder="Substation name"
+                  className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-slate-700 block mb-1">Grievance Narrative / Theft Modus Operandi:</label>
+              <textarea
+                rows="4"
+                value={details}
+                onChange={(e) => setDetails(e.target.value)}
+                placeholder="Describe how electricity theft is occurring (direct hooking, meter bypass, underground cable tap, unauthorized heavy machinery)..."
+                className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                required
+              ></textarea>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex justify-end">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded shadow flex items-center gap-2"
+              >
+                {submitting && <i className="fa-solid fa-spinner fa-spin"></i>}
+                <span>Submit Grievance to Bijli Mitra</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 9. ADMIN CHANGE PASSWORD MODAL (change-password.php)
+    // =========================================================================
+    function ChangePasswordModal({ token, onClose, notify }) {
+      const [oldPassword, setOldPassword] = useState('');
+      const [newPassword, setNewPassword] = useState('');
+      const [confirmPassword, setConfirmPassword] = useState('');
+      const [submitting, setSubmitting] = useState(false);
+      const [validationError, setValidationError] = useState('');
+
+      const checkValidation = (val) => {
+        setNewPassword(val);
+        const hasNum = /\d/.test(val);
+        const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+/.test(val);
+        if (val && !(hasNum && hasSpecial)) {
+          setValidationError('Password must contain at least one number and one special character.');
+        } else {
+          setValidationError('');
+        }
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!oldPassword) return setValidationError('Current Password field is empty!');
+        if (!newPassword) return setValidationError('New Password field is empty!');
+        if (!confirmPassword) return setValidationError('Confirm Password field is empty!');
+        if (newPassword !== confirmPassword) {
+          return setValidationError('Password and Confirm Password field do not match!');
+        }
+        const hasNum = /\d/.test(newPassword);
+        const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+/.test(newPassword);
+        if (!hasNum || !hasSpecial) {
+          return setValidationError('Password must contain at least one number and one special character.');
+        }
+
+        setSubmitting(true);
+        try {
+          const res = await fetch(`${API_BASE}/auth/change-password`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ oldPassword, newPassword, confirmPassword })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Password update failed');
+          notify('Password changed successfully!', 'success');
+          onClose();
+        } catch (err) {
+          setValidationError(err.message);
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full overflow-hidden border border-slate-300">
+            <div className="p-4 bg-slate-800 text-white flex items-center justify-between">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <i className="fa-solid fa-key text-teal-400"></i> Admin Change Password
+              </h3>
+              <button onClick={onClose} className="text-slate-400 hover:text-white">&times;</button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs font-semibold">
+              {validationError && (
+                <div className="p-2.5 bg-red-50 text-red-700 border border-red-200 rounded text-xs flex items-center gap-1.5">
+                  <i className="fa-solid fa-triangle-exclamation"></i>
+                  <span>{validationError}</span>
+                </div>
+              )}
+              <div>
+                <label className="text-slate-700 block mb-1">Current Password *</label>
+                <input
+                  type="password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-2 text-xs"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-slate-700 block mb-1">New Password *</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => checkValidation(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-2 text-xs"
+                  required
+                />
+                <span className="text-[10px] text-slate-500 font-normal">Must contain at least 1 number and 1 special character</span>
+              </div>
+              <div>
+                <label className="text-slate-700 block mb-1">Confirm New Password *</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-2 text-xs"
+                  required
+                />
+              </div>
+              <div className="pt-2 border-t border-slate-100 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded font-bold shadow flex items-center gap-1.5"
+                >
+                  {submitting && <i className="fa-solid fa-spinner fa-spin"></i>}
+                  <span>Change Password</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 10. MANAGE USERS VIEW (manage-users.php)
+    // =========================================================================
+    function ManageUsersView({ token, notify }) {
+      const [users, setUsers] = useState([]);
+      const [pagination, setPagination] = useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+      const [loading, setLoading] = useState(true);
+      const [search, setSearch] = useState('');
+      const [selectedUserId, setSelectedUserId] = useState(null);
+
+      const fetchUsers = async (page = 1) => {
+        setLoading(true);
+        try {
+          const params = new URLSearchParams({ page: String(page), limit: String(pagination.limit) });
+          if (search.trim()) params.append('search', search.trim());
+          const res = await fetch(`${API_BASE}/auth/users?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to fetch users');
+          setUsers(data.records || []);
+          setPagination(data.pagination || { page: 1, limit: 15, total: 0, totalPages: 1 });
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      useEffect(() => {
+        fetchUsers(1);
+      }, [token]);
+
+      const handleDelete = async (id, name) => {
+        if (!window.confirm(`Do you really want to delete user "${name}"?`)) return;
+        try {
+          const res = await fetch(`${API_BASE}/auth/users/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to delete user');
+          notify('User deleted successfully', 'success');
+          fetchUsers(pagination.page);
+        } catch (err) {
+          notify(err.message, 'error');
+        }
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="lavender-box rounded-lg p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <i className="fa-solid fa-users text-teal-700"></i>
+                <span>Manage Users</span>
+              </h2>
+              <p className="text-xs text-slate-600">Administrative directory of registered portal complainants and informant accounts (manage-users.php).</p>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); fetchUsers(1); }} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search Name, Email, Phone..."
+                className="border border-slate-300 rounded px-3 py-1.5 text-xs bg-white text-slate-800 w-60"
+              />
+              <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded text-xs">
+                Filter
+              </button>
+            </form>
+          </div>
+
+          <div className="bg-white rounded-lg shadow border border-slate-200 overflow-x-auto">
+            {loading ? (
+              <div className="p-12 text-center text-slate-500 font-semibold flex items-center justify-center gap-2">
+                <i className="fa-solid fa-spinner fa-spin text-teal-600 text-lg"></i> Loading user accounts...
+              </div>
+            ) : users.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 font-semibold">
+                No registered users found matching the query.
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700 uppercase font-bold border-b border-slate-300">
+                    <th className="px-3 py-3 w-12 text-center">#</th>
+                    <th className="px-3 py-3">Name</th>
+                    <th className="px-3 py-3">Email</th>
+                    <th className="px-3 py-3">Contact no</th>
+                    <th className="px-3 py-3">Reg. Date</th>
+                    <th className="px-3 py-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-slate-700">
+                  {users.map((u, idx) => (
+                    <tr key={u.id} className="hover:bg-slate-50 transition">
+                      <td className="px-3 py-2.5 text-center font-bold text-slate-500">
+                        {((pagination.page - 1) * pagination.limit) + idx + 1}
+                      </td>
+                      <td className="px-3 py-2.5 font-bold text-slate-900">{u.fullName}</td>
+                      <td className="px-3 py-2.5 text-slate-600 font-mono">{u.userEmail}</td>
+                      <td className="px-3 py-2.5 text-slate-600">{u.contactNo || '—'}</td>
+                      <td className="px-3 py-2.5 text-slate-500">
+                        {u.regDate ? new Date(u.regDate).toLocaleString('en-IN') : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setSelectedUserId(u.id)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-2.5 py-1 rounded shadow"
+                            title="View User Details (userprofile.php)"
+                          >
+                            View Details
+                          </button>
+                          <button
+                            onClick={() => handleDelete(u.id, u.fullName)}
+                            className="bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] px-2.5 py-1 rounded shadow"
+                            title="Delete User"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {pagination.totalPages > 1 && (
+              <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+                <div>
+                  Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} users
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    disabled={pagination.page <= 1}
+                    onClick={() => fetchUsers(pagination.page - 1)}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-semibold disabled:opacity-50"
+                  >
+                    Prev
+                  </button>
+                  <span className="px-2 py-1 font-bold text-teal-700">Page {pagination.page} of {pagination.totalPages}</span>
+                  <button
+                    disabled={pagination.page >= pagination.totalPages}
+                    onClick={() => fetchUsers(pagination.page + 1)}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-semibold disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {selectedUserId && (
+            <UserProfileModal
+              userId={selectedUserId}
+              token={token}
+              notify={notify}
+              onClose={() => setSelectedUserId(null)}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 11. USER PROFILE MODAL (userprofile.php)
+    // =========================================================================
+    function UserProfileModal({ userId, token, notify, onClose }) {
+      const [profile, setProfile] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`${API_BASE}/auth/users/${userId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(r => r.json())
+          .then(d => setProfile(d))
+          .catch(e => notify(e.message, 'error'))
+          .finally(() => setLoading(false));
+      }, [userId, token]);
+
+      return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full overflow-hidden border border-slate-300">
+            <div className="p-4 bg-slate-800 text-white flex items-center justify-between">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <i className="fa-solid fa-id-card text-teal-400"></i>
+                <span>{profile ? `${profile.fullName}'s profile` : 'User Profile'}</span>
+              </h3>
+              <button onClick={onClose} className="text-slate-400 hover:text-white text-lg">&times;</button>
+            </div>
+
+            <div className="p-5 text-xs text-slate-800">
+              {loading ? (
+                <div className="p-8 text-center text-slate-500">
+                  <i className="fa-solid fa-spinner fa-spin text-teal-600 text-lg"></i> Loading profile...
+                </div>
+              ) : profile ? (
+                <table className="w-full border-collapse">
+                  <tbody>
+                    <tr className="border-b border-slate-200">
+                      <td className="py-2.5 font-bold text-slate-600 w-36">Reg Date:</td>
+                      <td className="py-2.5 text-slate-900">{profile.regDate ? new Date(profile.regDate).toLocaleString('en-IN') : '—'}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="py-2.5 font-bold text-slate-600">User Email:</td>
+                      <td className="py-2.5 font-mono text-teal-700">{profile.userEmail}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="py-2.5 font-bold text-slate-600">User Contact no:</td>
+                      <td className="py-2.5 text-slate-900">{profile.contactNo || '—'}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="py-2.5 font-bold text-slate-600">Address:</td>
+                      <td className="py-2.5 text-slate-900">{profile.address || '—'}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="py-2.5 font-bold text-slate-600">State:</td>
+                      <td className="py-2.5 text-slate-900">{profile.State || 'Uttar Pradesh'}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="py-2.5 font-bold text-slate-600">Country:</td>
+                      <td className="py-2.5 text-slate-900">{profile.country || 'India'}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="py-2.5 font-bold text-slate-600">Pincode:</td>
+                      <td className="py-2.5 text-slate-900">{profile.pincode || '—'}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2.5 font-bold text-slate-600">Last Updation:</td>
+                      <td className="py-2.5 text-slate-900">{profile.updationDate ? new Date(profile.updationDate).toLocaleString('en-IN') : '—'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-red-600 font-semibold text-center p-4">Profile could not be loaded.</div>
+              )}
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 text-xs">
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center gap-1.5"
+              >
+                <i className="fa-solid fa-print"></i> Print
+              </button>
+              <button
+                onClick={onClose}
+                className="px-4 py-1.5 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 12. USER LOGS VIEW (user-logs.php)
+    // =========================================================================
+    function UserLogsView({ token, notify }) {
+      const [logs, setLogs] = useState([]);
+      const [pagination, setPagination] = useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
+      const [loading, setLoading] = useState(true);
+      const [search, setSearch] = useState('');
+
+      const fetchLogs = async (page = 1) => {
+        setLoading(true);
+        try {
+          const params = new URLSearchParams({ page: String(page), limit: String(pagination.limit) });
+          if (search.trim()) params.append('search', search.trim());
+          const res = await fetch(`${API_BASE}/auth/user-logs?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to fetch user logs');
+          setLogs(data.records || []);
+          setPagination(data.pagination || { page: 1, limit: 15, total: 0, totalPages: 1 });
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      useEffect(() => {
+        fetchLogs(1);
+      }, [token]);
+
+      return (
+        <div className="space-y-4">
+          <div className="lavender-box rounded-lg p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <i className="fa-solid fa-clipboard-list text-slate-700"></i>
+                <span>Users Log</span>
+              </h2>
+              <p className="text-xs text-slate-600">Chronological history of citizen access activity and authentication attempts (user-logs.php).</p>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); fetchLogs(1); }} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search User Email..."
+                className="border border-slate-300 rounded px-3 py-1.5 text-xs bg-white text-slate-800 w-52"
+              />
+              <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded text-xs">
+                Filter
+              </button>
+            </form>
+          </div>
+
+          <div className="bg-white rounded-lg shadow border border-slate-200 overflow-x-auto">
+            {loading ? (
+              <div className="p-12 text-center text-slate-500 font-semibold flex items-center justify-center gap-2">
+                <i className="fa-solid fa-spinner fa-spin text-teal-600 text-lg"></i> Loading access logs...
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 font-semibold">
+                No access logs recorded.
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700 uppercase font-bold border-b border-slate-300">
+                    <th className="px-3 py-3 w-12 text-center">#</th>
+                    <th className="px-3 py-3">User Email</th>
+                    <th className="px-3 py-3">User IP</th>
+                    <th className="px-3 py-3">Login Time</th>
+                    <th className="px-3 py-3">Logout Time</th>
+                    <th className="px-3 py-3 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-slate-700 font-mono">
+                  {logs.map((l, idx) => (
+                    <tr key={l.id} className="hover:bg-slate-50 transition">
+                      <td className="px-3 py-2.5 text-center font-bold text-slate-500 font-sans">
+                        {((pagination.page - 1) * pagination.limit) + idx + 1}
+                      </td>
+                      <td className="px-3 py-2.5 font-bold text-slate-900">{l.username}</td>
+                      <td className="px-3 py-2.5 text-slate-600">{l.userip || '127.0.0.1'}</td>
+                      <td className="px-3 py-2.5 text-slate-600">
+                        {l.loginTime ? new Date(l.loginTime).toLocaleString('en-IN') : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-500">{l.logout || '—'}</td>
+                      <td className="px-3 py-2.5 text-center font-sans">
+                        {l.status === 1 ? (
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            Successful
+                          </span>
+                        ) : (
+                          <span className="bg-red-100 text-red-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            Failed
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {pagination.totalPages > 1 && (
+              <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600 font-sans">
+                <div>
+                  Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} log records
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    disabled={pagination.page <= 1}
+                    onClick={() => fetchLogs(pagination.page - 1)}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-semibold disabled:opacity-50"
+                  >
+                    Prev
+                  </button>
+                  <span className="px-2 py-1 font-bold text-teal-700">Page {pagination.page} of {pagination.totalPages}</span>
+                  <button
+                    disabled={pagination.page >= pagination.totalPages}
+                    onClick={() => fetchLogs(pagination.page + 1)}
+                    className="px-2.5 py-1 bg-white border border-slate-300 rounded font-semibold disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Render the React Application
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

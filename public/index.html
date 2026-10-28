@@ -1,0 +1,2328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UPPCL Bijli Mitra — Official Anti-Theft Grievance Redressal Portal</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome 6 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Google Fonts: Open Sans -->
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
+  
+  <!-- React 18 & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel Standalone for In-Browser JSX Compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body { font-family: 'Open Sans', Arial, sans-serif; background-color: #ede8f2; margin: 0; padding: 0; }
+    
+    /* Authentic UPPCL Portal Styles matching Picture 2, 3 & 4 */
+    .portal-banner {
+      background: linear-gradient(180deg, #ebd8f0 0%, #e2cbe8 100%);
+      border-top: 1px solid #d5bcdb;
+      border-bottom: 1px solid #c9b1cf;
+    }
+    .accordion-header {
+      background-color: #556385;
+      color: #ffffff;
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+    }
+    .badge-blue { background-color: #0055ff; color: #fff; }
+    .badge-red { background-color: #d9534f; color: #fff; }
+    .badge-green { background-color: #28a745; color: #fff; }
+    .badge-lightgreen { background-color: #85ce36; color: #fff; }
+    .badge-orange { background-color: #f0ad4e; color: #fff; }
+    .badge-darkred { background-color: #9b111e; color: #fff; }
+    .badge-maroon { background-color: #721c24; color: #fff; }
+    .badge-purple { background-color: #6f42c1; color: #fff; }
+
+    .btn-uppcl-excel {
+      background-color: #28a745;
+      color: #ffffff;
+      border: 1px solid #23903c;
+    }
+    .btn-uppcl-excel:hover {
+      background-color: #218838;
+    }
+    .btn-uppcl-filter {
+      background-color: #17a2b8;
+      color: #ffffff;
+      border: 1px solid #138496;
+    }
+    .btn-uppcl-filter:hover {
+      background-color: #138496;
+    }
+    .btn-uppcl-view {
+      background-color: #17a2b8;
+      color: #ffffff;
+    }
+    .btn-uppcl-view:hover {
+      background-color: #117a8b;
+    }
+    .status-not-processed {
+      color: #ec0000;
+      font-weight: 700;
+    }
+    .status-forwarded {
+      color: #0055ff;
+      font-weight: 700;
+    }
+    .status-reverted {
+      color: #f0ad4e;
+      font-weight: 700;
+    }
+    .status-closed {
+      color: #28a745;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col justify-between">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useMemo } = React;
+
+    const API_BASE = '/api';
+
+    // 1-Click Role Switcher Presets
+    const DEV_USERS = [
+      { label: 'Super Admin (admin)', username: 'admin', password: 'Admin@123', role: 'SUPER_ADMIN', badge: 'bg-red-600' },
+      { label: 'Super Admin (admin1)', username: 'admin1', password: 'admin123', role: 'SUPER_ADMIN', badge: 'bg-red-700' },
+      { label: 'DISCOM (DVVNL)', username: 'DVVNL', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-amber-600' },
+      { label: 'DISCOM (KeSCO)', username: 'KeSCO', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-orange-600' },
+      { label: 'DISCOM (MVVNL)', username: 'MVVNL', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-yellow-600' },
+      { label: 'DISCOM (PuVVNL)', username: 'PuVVNL', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-emerald-600' },
+      { label: 'DISCOM (PVVNL)', username: 'PVVNL', password: 'Admin@123', role: 'DISCOM_ADMIN', badge: 'bg-blue-600' },
+      { label: 'Division (eddrajapur)', username: 'eddrajapur', password: 'Admin@123', role: 'DIVISION_OFFICER', badge: 'bg-indigo-600' },
+      { label: 'Division (edd2mahobakp)', username: 'edd2mahobakp', password: 'Admin@123', role: 'DIVISION_OFFICER', badge: 'bg-purple-600' }
+    ];
+
+    function App() {
+      const [token, setToken] = useState(localStorage.getItem('bm_token') || '');
+      const [user, setUser] = useState(() => {
+        try {
+          return JSON.parse(localStorage.getItem('bm_user') || 'null');
+        } catch (e) {
+          return null;
+        }
+      });
+
+      // Active Queue / View
+      // 'not_processed' | 'forwarded' | 'reverted' | 'closed' | 'all' | 'mis_report' | 'district_summary' | 'register_public' | 'manage_users' | 'user_logs'
+      const [activeQueue, setActiveQueue] = useState('not_processed');
+
+      // Accordion state (Manage Complaint accordion toggle from Picture 2 & 3)
+      const [accordionOpen, setAccordionOpen] = useState(true);
+
+      // Operational & Financial Metrics
+      const [counts, setCounts] = useState({
+        total: 0,
+        notProcessed: 0,
+        forwarded: 0,
+        reverted: 0,
+        closed: 0,
+        registeredTillDate: 0,
+        theftFound: 0,
+        totalAssessCr: '0.00'
+      });
+
+      const [districts, setDistricts] = useState([]);
+      const [divisionOfficers, setDivisionOfficers] = useState([]);
+      const [notification, setNotification] = useState(null);
+
+      // User Menu dropdown state (top right avatar)
+      const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+      // Modals
+      const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+      const [customLoginOpen, setCustomLoginOpen] = useState(false);
+      const [customUsername, setCustomUsername] = useState('');
+      const [customPassword, setCustomPassword] = useState('Admin@123');
+
+      // Dossier modal
+      const [dossierCid, setDossierCid] = useState(null);
+
+      // Action / Close Modal (matching Picture 4)
+      const [actionModalComplaint, setActionModalComplaint] = useState(null);
+
+      // Super Admin Forward Modal
+      const [forwardModalComplaint, setForwardModalComplaint] = useState(null);
+
+      // Field Division Revert Modal (matching updatecomplaintvr.php)
+      const [revertModalComplaint, setRevertModalComplaint] = useState(null);
+
+      // Officers list for login datalist and direct login
+      const [allOfficersList, setAllOfficersList] = useState([]);
+      const [loginError, setLoginError] = useState('');
+      const [loggingIn, setLoggingIn] = useState(false);
+      const [loginUsernameInput, setLoginUsernameInput] = useState('');
+      const [loginPasswordInput, setLoginPasswordInput] = useState('Admin@123');
+
+      // Fetch all officer accounts for autocomplete/selector on main login page
+      useEffect(() => {
+        fetch(`${API_BASE}/complaints/meta/officers-all`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.officers && Array.isArray(data.officers)) {
+              setAllOfficersList(data.officers);
+            }
+          })
+          .catch(() => {});
+      }, []);
+
+      // Load authenticated metadata when logged in (NO AUTO-LOGIN AS SUPERADMIN)
+      useEffect(() => {
+        if (token && user) {
+          setAccordionOpen(true); // Keep Manage Complaint unfolded by-default
+          fetchDistricts();
+          fetchDivisionOfficers();
+          fetchMetrics();
+        }
+      }, [token, user]);
+
+      const notify = (msg, type = 'success') => {
+        setNotification({ msg, type });
+        setTimeout(() => setNotification(null), 4000);
+      };
+
+      const switchUser = async (username, password) => {
+        if (!username) {
+          setLoginError('Username is required.');
+          return;
+        }
+        setLoggingIn(true);
+        setLoginError('');
+        try {
+          const res = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username.trim(), password: (password || 'Admin@123').trim() })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Authentication failed. Please verify credentials.');
+          setToken(data.token);
+          setUser(data.user);
+          localStorage.setItem('bm_token', data.token);
+          localStorage.setItem('bm_user', JSON.stringify(data.user));
+          setUserMenuOpen(false);
+          setCustomLoginOpen(false);
+          notify(`Logged in as ${data.user.username} (${data.user.role})`);
+        } catch (err) {
+          setLoginError(err.message);
+          notify(err.message, 'error');
+        } finally {
+          setLoggingIn(false);
+        }
+      };
+
+      const handleLogout = () => {
+        setToken('');
+        setUser(null);
+        localStorage.removeItem('bm_token');
+        localStorage.removeItem('bm_user');
+        setUserMenuOpen(false);
+        setLoginUsernameInput('');
+        setLoginPasswordInput('Admin@123');
+        notify('Logged out successfully');
+      };
+
+      const fetchDistricts = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/complaints/meta/districts`);
+          const data = await res.json();
+          if (data.districts) setDistricts(data.districts);
+        } catch (e) {}
+      };
+
+      const fetchDivisionOfficers = async () => {
+        if (!token) return;
+        try {
+          const res = await fetch(`${API_BASE}/complaints/meta/division-officers`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.officers) setDivisionOfficers(data.officers);
+        } catch (e) {}
+      };
+
+      const fetchMetrics = async () => {
+        if (!token) return;
+        try {
+          const res = await fetch(`${API_BASE}/complaints/dashboard/metrics`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.operational) {
+            setCounts({
+              total: Number(data.operational.totalReceived) || 0,
+              notProcessed: Number(data.operational.notProcessedCount) || 0,
+              forwarded: Number(data.operational.forwardCount) || 0,
+              reverted: Number(data.operational.revertedCount) || 0,
+              closed: Number(data.operational.closedCount) || 0,
+              registeredTillDate: Number(data.operational.registeredTillDate) || Number(data.operational.totalReceived) || 0,
+              theftFound: data.financial ? Number(data.financial.theftFoundCount) || 0 : 0,
+              totalAssessCr: data.financial ? String(data.financial.totalAssessmentCr || '0.00') : '0.00'
+            });
+          }
+        } catch (e) {}
+      };
+
+      // =========================================================================
+      // MAIN LANDING PAGE: OFFICER LOGIN (440 LOGINS)
+      // Exactly matches Picture media_1793173312662_dd3f5c45.png
+      // Whosoever enters their credentials gets direct login into their portal
+      // =========================================================================
+      if (!token || !user) {
+        return (
+          <div className="min-h-screen bg-slate-100 flex flex-col justify-between">
+            {/* Top Official UPPCL Header */}
+            <header className="bg-white border-b border-slate-200 py-3 px-6 shadow-sm">
+              <div className="max-w-6xl mx-auto flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <img src="/img/uppcllogo.png" alt="UPPCL Logo" className="h-12 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
+                  <div>
+                    <div className="text-xl font-bold text-[#e64a19] tracking-tight leading-tight">Uttar Pradesh</div>
+                    <div className="text-sm font-semibold text-[#b78103] tracking-wide">Power Corporation Limited</div>
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500 font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                  <span>Official Officer Portal (440 Accounts)</span>
+                </div>
+              </div>
+            </header>
+
+            {/* Officer Login Modal/Card (Exact Visual Match to User Screenshot) */}
+            <div className="max-w-md w-full mx-auto my-8 px-4">
+              <div className="bg-white rounded-md shadow-2xl border border-slate-300 overflow-hidden">
+                {/* Dark Blue-Gray Card Header Bar */}
+                <div className="bg-[#556385] text-white p-3.5 flex items-center justify-between">
+                  <h3 className="font-bold text-xs flex items-center gap-2">
+                    <i className="fa-solid fa-users text-amber-300"></i>
+                    <span>Officer Login (440 Logins)</span>
+                  </h3>
+                  <span className="text-[10px] bg-slate-700/60 text-amber-200 px-2 py-0.5 rounded font-mono">
+                    440 DB Accounts
+                  </span>
+                </div>
+
+                {/* Login Form Body */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    switchUser(loginUsernameInput, loginPasswordInput);
+                  }}
+                  className="p-5 space-y-4 text-xs font-semibold"
+                >
+                  {loginError && (
+                    <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-xs flex items-center gap-2">
+                      <i className="fa-solid fa-circle-exclamation"></i>
+                      <span>{loginError}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">
+                      Username (from admin.sql):
+                    </label>
+                    <input
+                      type="text"
+                      list="officers-datalist"
+                      value={loginUsernameInput}
+                      onChange={(e) => setLoginUsernameInput(e.target.value)}
+                      placeholder="e.g. DVVNL, KeSCO, MVVNL, eddrajapur..."
+                      className="w-full border border-slate-300 rounded p-2.5 text-xs text-slate-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                      required
+                      autoFocus
+                    />
+                    <datalist id="officers-datalist">
+                      {allOfficersList.map(o => (
+                        <option key={o.id} value={o.username}>
+                          {o.username} ({o.discom} {o.zone || ''})
+                        </option>
+                      ))}
+                    </datalist>
+                    <div className="text-[10px] text-slate-500 font-normal mt-1 flex items-center justify-between">
+                      <span>Type any of the 440 usernames or pick from suggestions.</span>
+                      <span className="text-blue-600 font-mono">{allOfficersList.length || 440} Loaded</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">
+                      Password:
+                    </label>
+                    <input
+                      type="password"
+                      value={loginPasswordInput}
+                      onChange={(e) => setLoginPasswordInput(e.target.value)}
+                      placeholder="Default: Admin@123 or admin123"
+                      className="w-full border border-slate-300 rounded p-2.5 text-xs text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                      required
+                    />
+                    <div className="text-[10px] text-slate-500 font-normal mt-1">
+                      Works with DB password or master fallback <code>Admin@123</code> / <code>admin123</code>.
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => { setLoginUsernameInput(''); setLoginPasswordInput('Admin@123'); setLoginError(''); }}
+                      className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loggingIn}
+                      className="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold shadow flex items-center gap-1.5 transition disabled:opacity-50"
+                    >
+                      {loggingIn && <i className="fa-solid fa-spinner fa-spin"></i>}
+                      <span>{loggingIn ? 'Signing In...' : 'Log In'}</span>
+                    </button>
+                  </div>
+
+                  {/* 1-Click Quick Testing Login Role Pills */}
+                  <div className="mt-4 pt-3 border-t border-slate-200">
+                    <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center justify-between">
+                      <span>Quick 1-Click Role Logins:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 text-xs">
+                      {DEV_USERS.map(du => (
+                        <button
+                          key={du.username}
+                          type="button"
+                          onClick={() => {
+                            setLoginUsernameInput(du.username);
+                            setLoginPasswordInput(du.password);
+                            switchUser(du.username, du.password);
+                          }}
+                          className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-semibold text-[11px] border border-slate-300 transition"
+                        >
+                          {du.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <footer className="text-center py-4 text-xs text-teal-800 font-semibold bg-white border-t border-slate-200">
+              ©UPPCL | Designed by : IT Development Team. UPPCL
+            </footer>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen flex flex-col justify-between" onClick={() => userMenuOpen && setUserMenuOpen(false)}>
+          <div>
+            {/* =========================================================================
+                1. TOP OFFICIAL UPPCL HEADER (matching Picture 2 & 3)
+                ========================================================================= */}
+            <header className="bg-white border-b border-slate-200 shadow-sm py-2 px-4 sm:px-6">
+              <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
+                {/* Logo & UPPCL Branding */}
+                <div className="flex items-center gap-3.5">
+                  <img src="/img/uppcllogo.png" alt="UPPCL Logo" className="h-14 w-auto" onError={(e) => { e.target.style.display = 'none'; }} />
+                  <div>
+                    <div className="text-xl sm:text-2xl font-bold text-[#e64a19] tracking-tight leading-tight">Uttar Pradesh</div>
+                    <div className="text-sm sm:text-base font-semibold text-[#b78103] tracking-wide">Power Corporation Limited</div>
+                  </div>
+                </div>
+
+                {/* Quick Role Switcher Bar (For Testing Across the 440 Logins) */}
+                <div className="flex items-center flex-wrap gap-1 text-[11px] font-semibold">
+                  <span className="text-slate-500 mr-1 hidden lg:inline">Quick Test:</span>
+                  {DEV_USERS.map(du => (
+                    <button
+                      key={du.username}
+                      onClick={() => switchUser(du.username, du.password)}
+                      className={`px-2 py-0.5 rounded transition ${user?.username === du.username ? `${du.badge} text-white font-bold ring-1 ring-slate-400` : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'}`}
+                      title={`Switch to ${du.label}`}
+                    >
+                      {du.label.replace('Super Admin ', 'HQ:').replace('DISCOM ', '').replace('Division ', 'Div:')}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setCustomLoginOpen(true)}
+                    className="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded font-bold border border-teal-300 ml-1 flex items-center gap-1"
+                    title="Log in as any of the 440 usernames from admin.sql"
+                  >
+                    <i className="fa-solid fa-users text-teal-600"></i>
+                    <span>All 440 Logins</span>
+                  </button>
+                </div>
+              </div>
+            </header>
+
+            {/* =========================================================================
+                2. SUB-BANNER / HEADER TITLE BAR (matching Picture 2 & 3)
+                ========================================================================= */}
+            <div className="portal-banner py-2.5 px-4 sm:px-6 shadow-sm">
+              <div className="max-w-6xl mx-auto flex items-center justify-between">
+                {/* Left: House icon + Title */}
+                <div className="flex items-center gap-2.5 text-slate-900 font-bold text-sm sm:text-base">
+                  <i className="fa-solid fa-house text-[#8a3324] text-base"></i>
+                  <span>
+                    {user?.role === 'SUPER_ADMIN'
+                      ? 'Bijli Mitra UPPCL | Admin'
+                      : user?.role === 'DISCOM_ADMIN'
+                        ? `Bijli Mitra UPPCL | ${user.discom} Monitoring Dashboard`
+                        : `Bijli Mitra UPPCL | ${user.username} Division Portal`}
+                  </span>
+                </div>
+
+                {/* Right: Officer details + Direct Logout Button + Profile Menu */}
+                <div className="flex items-center gap-3">
+                  <div className="text-right hidden sm:block">
+                    <div className="text-xs font-bold text-slate-900 leading-tight flex items-center justify-end gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                      <span>{user.username}</span>
+                    </div>
+                    <div className="text-[10px] font-semibold text-slate-600">
+                      {user.role === 'SUPER_ADMIN'
+                        ? 'UPPCL HQ (Super Admin)'
+                        : user.role === 'DISCOM_ADMIN'
+                          ? `${user.discom} Monitoring`
+                          : `Field Division (${user.discom || ''})`}
+                    </div>
+                  </div>
+
+                  {/* Direct Logout Button */}
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                    title="Log out and return to Officer Login page"
+                  >
+                    <i className="fa-solid fa-right-from-bracket"></i>
+                    <span>Logout</span>
+                  </button>
+
+                  {/* User Profile Menu Avatar with Caret */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setUserMenuOpen(!userMenuOpen);
+                      }}
+                      className="flex items-center gap-1.5 p-1 rounded hover:bg-white/40 transition"
+                    >
+                      <div className="w-7 h-7 rounded-full bg-slate-300 border border-slate-400 flex items-center justify-center text-slate-700 font-bold text-xs">
+                        <i className="fa-solid fa-user"></i>
+                      </div>
+                      <i className="fa-solid fa-caret-down text-slate-700 text-xs"></i>
+                    </button>
+
+                  {/* Dropdown Menu */}
+                  {userMenuOpen && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute right-0 mt-1 w-56 bg-white rounded-md shadow-xl border border-slate-200 py-1.5 z-50 text-xs font-semibold"
+                    >
+                      <div className="px-3 py-2 border-b border-slate-100 bg-slate-50">
+                        <div className="font-bold text-slate-900">{user.username}</div>
+                        <div className="text-[10px] text-slate-500 uppercase font-mono">
+                          {user.role} {user.isReadOnly ? '(View-Only)' : ''}
+                        </div>
+                        <div className="text-[10px] text-slate-600 mt-0.5">
+                          DISCOM: <b>{user.discom || 'HQ'}</b>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => { setUserMenuOpen(false); setCustomLoginOpen(true); }}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-100 flex items-center gap-2 text-slate-700"
+                      >
+                        <i className="fa-solid fa-right-left text-slate-400"></i> Switch Account (440 Logins)
+                      </button>
+
+                      <button
+                        onClick={() => { setUserMenuOpen(false); setChangePasswordOpen(true); }}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-100 flex items-center gap-2 text-slate-700"
+                      >
+                        <i className="fa-solid fa-key text-slate-400"></i> Change Password
+                      </button>
+
+                      <div className="border-t border-slate-100 my-1"></div>
+
+                      <button
+                        onClick={handleLogout}
+                        className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600 flex items-center gap-2 font-bold"
+                      >
+                        <i className="fa-solid fa-right-from-bracket"></i> Logout
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Notification Toast */}
+            {notification && (
+              <div className={`fixed top-20 right-6 z-50 px-4 py-2.5 rounded shadow-xl text-xs font-bold text-white flex items-center gap-2 ${notification.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'}`}>
+                <i className={`fa-solid ${notification.type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'}`}></i>
+                <span>{notification.msg}</span>
+              </div>
+            )}
+
+            {/* =========================================================================
+                3. MAIN CONTAINER (matching Picture 2 & 3)
+                ========================================================================= */}
+            <main className="max-w-6xl mx-auto px-4 py-5 space-y-4">
+
+              {/* A. Collapsible "Manage Complaint" Accordion (matching Picture 2 & 3) */}
+              <div className="bg-white rounded shadow-sm border border-slate-300 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAccordionOpen(!accordionOpen)}
+                  className="accordion-header w-full px-4 py-2.5 flex items-center justify-between text-left text-sm font-bold transition hover:bg-[#485472]"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-white/70"></span>
+                    Manage Complaint
+                  </span>
+                  <i className={`fa-solid ${accordionOpen ? 'fa-chevron-up' : 'fa-chevron-down'} text-xs`}></i>
+                </button>
+
+                {/* Accordion Body: The 10 Metrics from Picture 3 */}
+                {accordionOpen && (
+                  <div className="divide-y divide-slate-100 text-xs font-semibold text-slate-800">
+                    {/* Item 1: Total Received */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveQueue('all')}
+                      className={`w-full px-4 py-2 flex items-center justify-between hover:bg-slate-50 transition ${activeQueue === 'all' ? 'bg-blue-50/50' : ''}`}
+                    >
+                      <span className="flex items-center gap-2 text-slate-700">
+                        <i className="fa-regular fa-file-lines text-blue-600"></i>
+                        <span>Total No. Of Complaints Received Till Now =&gt;</span>
+                      </span>
+                      <span className="badge-blue text-xs font-bold px-3 py-0.5 rounded font-mono">
+                        {counts.total !== undefined ? counts.total : 0}
+                      </span>
+                    </button>
+
+                    {/* Item 2: Complaints Closed */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveQueue('closed')}
+                      className={`w-full px-4 py-2 flex items-center justify-between hover:bg-slate-50 transition ${activeQueue === 'closed' ? 'bg-red-50/50' : ''}`}
+                    >
+                      <span className="flex items-center gap-2 text-slate-700">
+                        <i className="fa-solid fa-gear text-red-600"></i>
+                        <span>Complaints Closed After 21st'March'2026</span>
+                      </span>
+                      <span className="badge-red text-xs font-bold px-3 py-0.5 rounded font-mono">
+                        {counts.closed !== undefined ? counts.closed : 0}
+                      </span>
+                    </button>
+
+                    {/* Item 3: Forwarded / Pending Complaints */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveQueue('forwarded')}
+                      className={`w-full px-4 py-2 flex items-center justify-between hover:bg-slate-50 transition ${activeQueue === 'forwarded' ? 'bg-emerald-50/50' : ''}`}
+                    >
+                      <span className="flex items-center gap-2 text-slate-700">
+                        <i className="fa-solid fa-flag text-emerald-600"></i>
+                        <span>Forwarded / Pending Complaints</span>
+                      </span>
+                      <span className="badge-green text-xs font-bold px-3 py-0.5 rounded font-mono">
+                        {counts.forwarded !== undefined ? counts.forwarded : 0}
+                      </span>
+                    </button>
+
+                    {/* Item 4: Complaints Not Processed (Priority Queue) */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveQueue('not_processed')}
+                      className={`w-full px-4 py-2 flex items-center justify-between hover:bg-slate-50 transition ${activeQueue === 'not_processed' ? 'bg-lime-50/50' : ''}`}
+                    >
+                      <span className="flex items-center gap-2 text-slate-700">
+                        <i className="fa-solid fa-hashtag text-lime-600"></i>
+                        <span>Complaints Not Processed</span>
+                      </span>
+                      <span className="badge-lightgreen text-xs font-bold px-3 py-0.5 rounded font-mono">
+                        {counts.notProcessed !== undefined ? counts.notProcessed : 0}
+                      </span>
+                    </button>
+
+                    {/* Item 5: Reverted Complaints (Field division reverted to Superadmin) */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveQueue('reverted')}
+                      className={`w-full px-4 py-2 flex items-center justify-between hover:bg-slate-50 transition ${activeQueue === 'reverted' ? 'bg-amber-50/50' : ''}`}
+                    >
+                      <span className="flex items-center gap-2 text-slate-700">
+                        <i className="fa-solid fa-rotate-left text-amber-600"></i>
+                        <span>Reverted Complaints</span>
+                      </span>
+                      <span className="badge-orange text-xs font-bold px-3 py-0.5 rounded font-mono">
+                        {counts.reverted !== undefined ? counts.reverted : 0}
+                      </span>
+                    </button>
+
+                    {/* Item 6: Legacy Registered Till March */}
+                    <div className="px-4 py-2 flex items-center justify-between text-slate-700">
+                      <span className="flex items-center gap-2">
+                        <i className="fa-solid fa-pen text-rose-700"></i>
+                        <span>Complaints Registered Till 31st'March'2026</span>
+                      </span>
+                      <span className="badge-darkred text-xs font-bold px-3 py-0.5 rounded font-mono">
+                        {counts.registeredTillDate !== undefined ? counts.registeredTillDate : (counts.total || 0)}
+                      </span>
+                    </div>
+
+                    {/* Item 7: Total Theft Cases Found */}
+                    <div className="px-4 py-2 flex items-center justify-between text-slate-700">
+                      <span className="flex items-center gap-2">
+                        <i className="fa-solid fa-shield-halved text-amber-800"></i>
+                        <span>Total Theft Cases Found</span>
+                      </span>
+                      <span className="badge-maroon text-xs font-bold px-3 py-0.5 rounded font-mono">
+                        {counts.theftFound !== undefined ? counts.theftFound : 0}
+                      </span>
+                    </div>
+
+                    {/* Item 8: Total Assessment Value (in Cr) */}
+                    <div className="px-4 py-2 flex items-center justify-between text-slate-700">
+                      <span className="flex items-center gap-2">
+                        <i className="fa-solid fa-user-tie text-purple-700"></i>
+                        <span>Total Assessment Value (in Cr)</span>
+                      </span>
+                      <span className="badge-purple text-xs font-bold px-3 py-0.5 rounded font-mono">
+                        {counts.totalAssessCr !== undefined ? counts.totalAssessCr : '0.00'}
+                      </span>
+                    </div>
+
+                    {/* Item 9: Division Wise Data (Matches division-wise-dataHQ.php) */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveQueue('division_wise_data')}
+                      className={`w-full px-4 py-2 flex items-center justify-between hover:bg-slate-50 transition ${activeQueue === 'division_wise_data' ? 'bg-indigo-50/50' : ''}`}
+                    >
+                      <span className="flex items-center gap-2 text-indigo-700 font-bold">
+                        <i className="fa-regular fa-folder text-indigo-600"></i>
+                        <span>Division Wise No. Of Complaints DATA</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400">View &rarr;</span>
+                    </button>
+
+                    {/* Item 10: MIS Report */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveQueue('mis_report')}
+                      className={`w-full px-4 py-2 flex items-center justify-between hover:bg-slate-50 transition ${activeQueue === 'mis_report' ? 'bg-purple-50/50' : ''}`}
+                    >
+                      <span className="flex items-center gap-2 text-purple-700 font-bold">
+                        <i className="fa-solid fa-chart-column text-purple-600"></i>
+                        <span>MIS Report</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400">View &rarr;</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* B. The Active View Component */}
+              {activeQueue === 'mis_report' ? (
+                <div className="bg-white p-4 rounded shadow border border-slate-300">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+                    <h3 className="text-base font-bold text-slate-900">DISCOM Performance MIS Matrix</h3>
+                    <button onClick={() => setActiveQueue('not_processed')} className="text-xs text-blue-600 font-bold hover:underline">
+                      &larr; Back to Complaints Table
+                    </button>
+                  </div>
+                  <MISReportView token={token} notify={notify} />
+                </div>
+              ) : activeQueue === 'division_wise_data' ? (
+                <div className="bg-white p-4 rounded shadow border border-slate-300">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                      <i className="fa-regular fa-folder text-indigo-600"></i>
+                      <span>Division Wise No. Of Complaints DATA</span>
+                    </h3>
+                    <button onClick={() => setActiveQueue('not_processed')} className="text-xs text-blue-600 font-bold hover:underline">
+                      &larr; Back to Complaints Table
+                    </button>
+                  </div>
+                  <DivisionWiseDataView token={token} notify={notify} />
+                </div>
+              ) : (
+                /* The Unified Complaints Table View (matching Picture 2 & 3) */
+                <ComplaintsTableView
+                  queueType={activeQueue}
+                  token={token}
+                  user={user}
+                  districts={districts}
+                  divisionOfficers={divisionOfficers}
+                  notify={notify}
+                  refreshBadgeCounts={fetchMetrics}
+                  onOpenDossier={(cid) => setDossierCid(cid)}
+                  onOpenForward={(c) => setForwardModalComplaint(c)}
+                  onOpenAction={(c) => setActionModalComplaint(c)}
+                  onOpenRevert={(c) => setRevertModalComplaint(c)}
+                />
+              )}
+            </main>
+          </div>
+
+          {/* =========================================================================
+              4. FOOTER (matching Picture 2 & 3)
+              ========================================================================= */}
+          <footer className="text-center py-4 text-xs font-bold text-teal-800 bg-white border-t border-slate-200 mt-6">
+            &copy;UPPCL | Designed by : IT Development Team. UPPCL
+          </footer>
+
+          {/* =========================================================================
+              5. MODALS: DOSSIER, FORWARD, CLOSE (PIC 4), REVERT
+              ========================================================================= */}
+          {/* Dossier Modal (Picture 4 background) */}
+          {dossierCid && (
+            <ComplaintDossierModal
+              cid={dossierCid}
+              token={token}
+              user={user}
+              notify={notify}
+              onClose={() => setDossierCid(null)}
+              onForwardClick={(c) => { setDossierCid(null); setForwardModalComplaint(c); }}
+              onCloseClick={(c) => { setDossierCid(null); setActionModalComplaint(c); }}
+              onRevertClick={(c) => { setDossierCid(null); setRevertModalComplaint(c); }}
+            />
+          )}
+
+          {/* Super Admin Forward Modal */}
+          {forwardModalComplaint && (
+            <ForwardToDivisionModal
+              complaint={forwardModalComplaint}
+              token={token}
+              notify={notify}
+              onClose={() => setForwardModalComplaint(null)}
+              onSuccess={() => {
+                setForwardModalComplaint(null);
+                fetchMetrics();
+              }}
+            />
+          )}
+
+          {/* Close Complaint Modal (Picture 4 with 7 categories) */}
+          {actionModalComplaint && (
+            <ComplaintActionModal
+              complaint={actionModalComplaint}
+              token={token}
+              user={user}
+              notify={notify}
+              onClose={() => setActionModalComplaint(null)}
+              onSuccess={() => {
+                setActionModalComplaint(null);
+                fetchMetrics();
+              }}
+            />
+          )}
+
+          {/* Field Division Revert Modal (matching updatecomplaintvr.php) */}
+          {revertModalComplaint && (
+            <RevertToSuperadminModal
+              complaint={revertModalComplaint}
+              divisionOfficers={divisionOfficers}
+              token={token}
+              notify={notify}
+              onClose={() => setRevertModalComplaint(null)}
+              onSuccess={() => {
+                setRevertModalComplaint(null);
+                fetchMetrics();
+              }}
+            />
+          )}
+
+          {/* Change Password Modal */}
+          {changePasswordOpen && (
+            <ChangePasswordModal
+              token={token}
+              onClose={() => setChangePasswordOpen(false)}
+              notify={notify}
+            />
+          )}
+
+          {/* Officer Login Modal for Any of the 440 Logins */}
+          {customLoginOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded shadow-2xl max-w-sm w-full border border-slate-300 overflow-hidden">
+                <div className="bg-[#556385] text-white p-3.5 flex items-center justify-between">
+                  <h3 className="font-bold text-xs flex items-center gap-2">
+                    <i className="fa-solid fa-users text-amber-300"></i> Officer Login (440 Logins)
+                  </h3>
+                  <button onClick={() => setCustomLoginOpen(false)} className="text-white hover:text-slate-200 text-lg">&times;</button>
+                </div>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!customUsername) return notify('Username is required', 'error');
+                    switchUser(customUsername.trim(), customPassword.trim());
+                    setCustomLoginOpen(false);
+                  }}
+                  className="p-5 space-y-3 text-xs font-semibold"
+                >
+                  <div>
+                    <label className="text-slate-700 block mb-1">Username (from admin.sql):</label>
+                    <input
+                      type="text"
+                      list="officers-datalist"
+                      value={customUsername}
+                      onChange={(e) => setCustomUsername(e.target.value)}
+                      placeholder="e.g. DVVNL, KeSCO, MVVNL, eddrajapur..."
+                      className="w-full border border-slate-300 rounded p-2 text-xs font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-700 block mb-1">Password:</label>
+                    <input
+                      type="password"
+                      value={customPassword}
+                      onChange={(e) => setCustomPassword(e.target.value)}
+                      placeholder="Default: Admin@123 or admin123"
+                      className="w-full border border-slate-300 rounded p-2 text-xs"
+                      required
+                    />
+                    <div className="text-[10px] text-slate-500 font-normal mt-1">
+                      Works with DB password or master fallback <code>Admin@123</code> / <code>admin123</code>.
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setCustomLoginOpen(false)}
+                      className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded font-bold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold shadow"
+                    >
+                      Log In
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+    // =========================================================================
+    // 2. UNIFIED COMPLAINTS TABLE VIEW (Exact Visual Match to Picture 2 & 3)
+    // =========================================================================
+    function ComplaintsTableView({
+      queueType,
+      token,
+      user,
+      districts,
+      divisionOfficers,
+      notify,
+      refreshBadgeCounts,
+      onOpenDossier,
+      onOpenForward,
+      onOpenAction,
+      onOpenRevert
+    }) {
+      const [records, setRecords] = useState([]);
+      const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+      const [loading, setLoading] = useState(true);
+
+      // Filter controls matching Picture 2 & 3: SELECT DATES, FILTER, entries, Search
+      const [fromDate, setFromDate] = useState('');
+      const [toDate, setToDate] = useState('');
+      const [district, setDistrict] = useState('');
+      const [search, setSearch] = useState('');
+      const [entriesPerPage, setEntriesPerPage] = useState(10);
+
+      const endpoint = useMemo(() => {
+        if (queueType === 'all') return '/complaints/all';
+        if (queueType === 'forwarded') return '/complaints/forwarded';
+        if (queueType === 'reverted') return '/complaints/reverted';
+        if (queueType === 'closed') return '/complaints/closed';
+        return '/complaints/not-processed';
+      }, [queueType]);
+
+      const fetchRecords = useCallback(async (page = 1) => {
+        setLoading(true);
+        try {
+          const params = new URLSearchParams({
+            page: String(page),
+            limit: String(entriesPerPage)
+          });
+          if (fromDate) params.append('from_date', fromDate);
+          if (toDate) params.append('to_date', toDate);
+          if (district) params.append('district', district);
+          if (search.trim()) params.append('search', search.trim());
+
+          const res = await fetch(`${API_BASE}${endpoint}?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to fetch complaints');
+          setRecords(data.records || []);
+          setPagination(data.pagination || { page: 1, limit: entriesPerPage, total: 0, totalPages: 1 });
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setLoading(false);
+        }
+      }, [token, endpoint, fromDate, toDate, district, search, entriesPerPage]);
+
+      useEffect(() => {
+        if (token) fetchRecords(1);
+      }, [token, endpoint, entriesPerPage]);
+
+      const handleFilterSubmit = (e) => {
+        e.preventDefault();
+        fetchRecords(1);
+      };
+
+      const handleExcelExport = () => {
+        const params = new URLSearchParams({ status: queueType });
+        if (fromDate) params.append('from_date', fromDate);
+        if (toDate) params.append('to_date', toDate);
+        if (district) params.append('district', district);
+        if (search) params.append('search', search);
+
+        window.open(`${API_BASE}/complaints/export/excel?${params.toString()}&token=${token}`, '_blank');
+      };
+
+      return (
+        <div className="bg-white rounded shadow-sm border border-slate-300 p-4 space-y-4">
+          {/* Centered Export To Excel Button (matching Picture 2 & 3) */}
+          <div className="text-center pt-2">
+            <button
+              type="button"
+              onClick={handleExcelExport}
+              className="btn-uppcl-excel text-xs font-bold px-4 py-1.5 rounded shadow inline-flex items-center gap-1.5"
+            >
+              <i className="fa-regular fa-file-excel"></i> Export To Excel
+            </button>
+          </div>
+
+          {/* SELECT DATES & FILTER Centered Form (matching Picture 2 & 3) */}
+          <form onSubmit={handleFilterSubmit} className="text-center space-y-2.5">
+            <div className="inline-flex flex-wrap items-center justify-center gap-2 text-xs font-bold text-slate-800">
+              <span className="uppercase">SELECT DATES</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                placeholder="dd-mm-yyyy"
+                className="border border-slate-300 rounded px-2.5 py-1 text-xs text-slate-700 bg-white"
+              />
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                placeholder="dd-mm-yyyy"
+                className="border border-slate-300 rounded px-2.5 py-1 text-xs text-slate-700 bg-white"
+              />
+              <select
+                value={district}
+                onChange={(e) => setDistrict(e.target.value)}
+                className="border border-slate-300 rounded px-2 py-1 text-xs bg-white text-slate-700 max-w-[140px]"
+              >
+                <option value="">All Districts</option>
+                {districts.map(d => (
+                  <option key={d.id} value={d.stateName}>{d.stateName}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <button
+                type="submit"
+                className="btn-uppcl-filter text-xs font-bold px-5 py-1.5 rounded uppercase tracking-wider shadow"
+              >
+                FILTER
+              </button>
+              {(fromDate || toDate || district || search) && (
+                <button
+                  type="button"
+                  onClick={() => { setFromDate(''); setToDate(''); setDistrict(''); setSearch(''); setTimeout(() => fetchRecords(1), 0); }}
+                  className="ml-2 text-xs text-slate-500 hover:text-slate-800 underline font-semibold"
+                >
+                  Clear Filter
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* DataTables Controls Bar: Show X entries (Left) and Search (Right) */}
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-700 pt-2 border-t border-slate-100">
+            <div className="flex items-center gap-1.5 font-semibold">
+              <span>Show</span>
+              <select
+                value={entriesPerPage}
+                onChange={(e) => setEntriesPerPage(Number(e.target.value))}
+                className="border border-slate-300 rounded px-2 py-0.5 bg-white text-xs"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span>entries</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 font-semibold">
+              <span>Search:</span>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && fetchRecords(1)}
+                className="border border-slate-300 rounded px-2.5 py-1 bg-white text-xs w-48"
+                placeholder=""
+              />
+            </div>
+          </div>
+
+          {/* Exact 9-Column Table (matching Picture 2 & 3) */}
+          <div className="overflow-x-auto border border-slate-200">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-[#f9f9f9] text-slate-700 font-bold border-b border-slate-300 text-[11px]">
+                  <th className="p-2 border-r border-slate-200">Complaint No.</th>
+                  <th className="p-2 border-r border-slate-200">Name</th>
+                  <th className="p-2 border-r border-slate-200">Address</th>
+                  <th className="p-2 border-r border-slate-200">District</th>
+                  <th className="p-2 border-r border-slate-200">DIV/Substation</th>
+                  <th className="p-2 border-r border-slate-200 min-w-[200px]">Complaint Details</th>
+                  <th className="p-2 border-r border-slate-200 text-center">Complain File</th>
+                  <th className="p-2 border-r border-slate-200 whitespace-nowrap">Reg. Date</th>
+                  {queueType === 'reverted' && <th className="p-2 border-r border-slate-200 text-amber-700">Suggested Division</th>}
+                  {queueType === 'reverted' && <th className="p-2 border-r border-slate-200 text-slate-700">Forwarded To</th>}
+                  <th className="p-2 text-center min-w-[130px]">Status/Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {loading ? (
+                  <tr>
+                    <td colSpan={queueType === 'reverted' ? 11 : 9} className="p-8 text-center text-slate-500 font-semibold">
+                      <i className="fa-solid fa-spinner fa-spin text-lg mr-2 text-teal-600"></i> Loading records...
+                    </td>
+                  </tr>
+                ) : records.length === 0 ? (
+                  <tr>
+                    <td colSpan={queueType === 'reverted' ? 11 : 9} className="p-8 text-center text-slate-500 font-semibold">
+                      No complaints found in this register.
+                    </td>
+                  </tr>
+                ) : (
+                  records.map((r, idx) => {
+                    const isClosed = r.status === 'closed';
+                    const isForwarded = r.status === 'forward';
+                    const isReverted = r.status === 'reverted';
+                    const isNotProcessed = !r.status || r.status === '' || r.status === '0';
+
+                    return (
+                      <tr key={r.complaintNumber} className={idx % 2 === 0 ? 'bg-white' : 'bg-[#fcfcfc] hover:bg-slate-50 transition'}>
+                        {/* 1. Complaint No */}
+                        <td className="p-2 font-mono font-semibold text-slate-900 border-r border-slate-200 whitespace-nowrap">
+                          {r.complaintNumber}
+                        </td>
+
+                        {/* 2. Name */}
+                        <td className="p-2 text-slate-800 border-r border-slate-200 max-w-[120px]">
+                          {r.thiefname}
+                        </td>
+
+                        {/* 3. Address */}
+                        <td className="p-2 text-slate-700 border-r border-slate-200 max-w-[150px] truncate" title={r.thiefaddress}>
+                          {r.thiefaddress}
+                        </td>
+
+                        {/* 4. District */}
+                        <td className="p-2 text-slate-800 border-r border-slate-200 whitespace-nowrap">
+                          {r.district}
+                        </td>
+
+                        {/* 5. DIV/Substation */}
+                        <td className="p-2 text-slate-700 border-r border-slate-200 whitespace-nowrap">
+                          {r.substn || 'N/A'}
+                        </td>
+
+                        {/* 6. Complaint Details */}
+                        <td className="p-2 text-slate-700 border-r border-slate-200 max-w-[240px] text-[11px] leading-relaxed line-clamp-2" title={r.complaintDetails}>
+                          {r.complaintDetails}
+                        </td>
+
+                        {/* 7. Complain File */}
+                        <td className="p-2 text-center border-r border-slate-200 whitespace-nowrap">
+                          {r.complaintFile && r.complaintFile !== 'NULL' ? (
+                            <a
+                              href={`/uploads/complaintdocs/${r.complaintFile}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 hover:underline font-semibold"
+                            >
+                              View File
+                            </a>
+                          ) : (
+                            <span className="text-slate-400 italic">File NA</span>
+                          )}
+                        </td>
+
+                        {/* 8. Reg. Date */}
+                        <td className="p-2 text-slate-600 border-r border-slate-200 whitespace-nowrap font-mono text-[11px]">
+                          {r.regDate}
+                        </td>
+
+                        {/* Reverted Extra Columns */}
+                        {queueType === 'reverted' && (
+                          <td className="p-2 border-r border-slate-200 font-bold text-amber-700 whitespace-nowrap">
+                            {r.sdivision || 'None'}
+                          </td>
+                        )}
+                        {queueType === 'reverted' && (
+                          <td className="p-2 border-r border-slate-200 font-mono text-slate-600 whitespace-nowrap">
+                            {r.assigned_username || 'N/A'}
+                          </td>
+                        )}
+
+                        {/* 9. Status / Action (matching Picture 2 & 3) */}
+                        <td className="p-2 text-center whitespace-nowrap">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className={`text-[11px] uppercase ${isClosed ? 'status-closed' : (isForwarded ? 'status-forwarded' : (isReverted ? 'status-reverted' : 'status-not-processed'))}`}>
+                              {isClosed ? 'CLOSED' : (isForwarded ? 'FORWARDED' : (isReverted ? 'REVERTED' : 'NOT PROCESSED'))}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onOpenDossier(r.complaintNumber)}
+                              className="btn-uppcl-view text-white text-[11px] font-bold px-2 py-0.5 rounded shadow-sm"
+                            >
+                              View Details
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Table Footer: Showing X to Y of Z entries & Pagination < > (Picture 2 & 3) */}
+          <div className="flex flex-wrap items-center justify-between text-xs text-slate-600 pt-2">
+            <div>
+              Showing {pagination.total > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} entries
+            </div>
+            <div className="flex items-center gap-1 font-bold">
+              <button
+                disabled={pagination.page <= 1}
+                onClick={() => fetchRecords(pagination.page - 1)}
+                className="px-2.5 py-1 border border-slate-300 rounded bg-white hover:bg-slate-100 disabled:opacity-40"
+              >
+                &lt;
+              </button>
+              <span className="px-2">{pagination.page}</span>
+              <button
+                disabled={pagination.page >= pagination.totalPages}
+                onClick={() => fetchRecords(pagination.page + 1)}
+                className="px-2.5 py-1 border border-slate-300 rounded bg-white hover:bg-slate-100 disabled:opacity-40"
+              >
+                &gt;
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 3. COMPLAINT DOSSIER TIMELINE MODAL (Picture 4 Background)
+    // =========================================================================
+    function ComplaintDossierModal({ cid, token, user, notify, onClose, onForwardClick, onCloseClick, onRevertClick }) {
+      const [data, setData] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`${API_BASE}/complaints/${cid}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(r => r.json())
+          .then(d => setData(d))
+          .catch(e => notify(e.message, 'error'))
+          .finally(() => setLoading(false));
+      }, [cid, token]);
+
+      if (loading) {
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded p-6 shadow-xl text-center text-xs font-semibold">
+              <i className="fa-solid fa-spinner fa-spin text-xl text-teal-600 mb-2"></i>
+              <p>Loading complaint details...</p>
+            </div>
+          </div>
+        );
+      }
+
+      if (!data || !data.complaint) {
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded p-6 shadow-xl text-center text-xs font-semibold text-red-600">
+              Complaint not found or access denied.
+              <div className="mt-3"><button onClick={onClose} className="px-3 py-1 bg-slate-200 text-slate-800 rounded">Close</button></div>
+            </div>
+          </div>
+        );
+      }
+
+      const c = data.complaint;
+      const isClosed = c.status === 'closed';
+      const isReverted = c.status === 'reverted';
+      const isForwarded = c.status === 'forward';
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded shadow-2xl max-w-3xl w-full border border-slate-300 overflow-hidden my-auto max-h-[95vh] flex flex-col">
+            {/* Header */}
+            <div className="bg-[#556385] text-white p-3 sm:p-4 flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <i className="fa-solid fa-file-invoice text-amber-300"></i> Complaint Dossier &mdash; Ticket #{c.complaintNumber}
+              </h3>
+              <button onClick={onClose} className="text-white hover:text-slate-200 text-lg">&times;</button>
+            </div>
+
+            {/* Content: Authentic Details Table matching Picture 4 */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs text-slate-800 flex-1">
+              <div className="border border-slate-300 rounded overflow-hidden">
+                <table className="w-full border-collapse text-xs">
+                  <tbody>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-2.5 bg-slate-50 font-bold w-1/3 border-r border-slate-200">Complaint Number</td>
+                      <td className="p-2.5 font-mono font-bold text-slate-900">{c.complaintNumber}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-2.5 bg-slate-50 font-bold border-r border-slate-200">Name</td>
+                      <td className="p-2.5 font-semibold text-slate-800">{c.thiefname}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-2.5 bg-slate-50 font-bold border-r border-slate-200">Address</td>
+                      <td className="p-2.5 text-slate-700">{c.thiefaddress}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-2.5 bg-slate-50 font-bold border-r border-slate-200">District</td>
+                      <td className="p-2.5 font-semibold">{c.district}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-2.5 bg-slate-50 font-bold border-r border-slate-200">Division / Substation</td>
+                      <td className="p-2.5">{c.substn || 'N/A'}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-2.5 bg-slate-50 font-bold border-r border-slate-200">Complaint Details</td>
+                      <td className="p-2.5 text-slate-700 whitespace-pre-wrap">{c.complaintDetails}</td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-2.5 bg-slate-50 font-bold border-r border-slate-200">File(if any)</td>
+                      <td className="p-2.5">
+                        {c.complaintFile && c.complaintFile !== 'NULL' ? (
+                          <a href={`/uploads/complaintdocs/${c.complaintFile}`} target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">
+                            View File
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 italic">File NA</span>
+                        )}
+                      </td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-2.5 bg-slate-50 font-bold border-r border-slate-200">Final Status</td>
+                      <td className="p-2.5 font-bold">
+                        {isClosed ? <span className="status-closed">Closed</span> : (isForwarded ? <span className="status-forwarded">Forwarded</span> : (isReverted ? <span className="status-reverted">Reverted to Super Admin</span> : <span className="status-not-processed">Not Process Yet</span>))}
+                      </td>
+                    </tr>
+                    <tr className="border-b border-slate-200">
+                      <td className="p-2.5 bg-slate-50 font-bold border-r border-slate-200">Forwarded To</td>
+                      <td className="p-2.5 font-mono font-bold text-indigo-700">
+                        {c.assigned_username || c.username || 'Unassigned'}
+                      </td>
+                    </tr>
+                    {/* Suggested Division & Reversion Note if Reverted */}
+                    {isReverted && (
+                      <tr className="border-b border-slate-200 bg-amber-50">
+                        <td className="p-2.5 bg-amber-100 font-bold border-r border-slate-200 text-amber-900">Suggested Division</td>
+                        <td className="p-2.5 font-bold text-amber-800 font-mono text-sm">
+                          {c.sdivision || 'None'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Action Buttons Area (matching Picture 4) */}
+              <div className="bg-slate-50 p-3 rounded border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs font-bold text-slate-700">Available Actions:</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Super Admin Actions: Forward & Close */}
+                  {user?.role === 'SUPER_ADMIN' && !isClosed && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onForwardClick(c)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-1.5 rounded shadow text-xs flex items-center gap-1.5"
+                      >
+                        <i className="fa-solid fa-share"></i> Forward
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onCloseClick(c)}
+                        className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-1.5 rounded shadow text-xs flex items-center gap-1.5"
+                      >
+                        <i className="fa-solid fa-lock"></i> Close
+                      </button>
+                    </>
+                  )}
+
+                  {/* Field Division Officer Actions: Revert Back & Close */}
+                  {user?.role === 'DIVISION_OFFICER' && !isClosed && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onRevertClick(c)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-1.5 rounded shadow text-xs flex items-center gap-1.5"
+                        title="Revert back to Super Admin with suggested division"
+                      >
+                        <i className="fa-solid fa-rotate-left"></i> Revert Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onCloseClick(c)}
+                        className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-1.5 rounded shadow text-xs flex items-center gap-1.5"
+                        title="Close complaint in category (FIR, Wrong Tariff, etc.)"
+                      >
+                        <i className="fa-solid fa-lock"></i> Close
+                      </button>
+                    </>
+                  )}
+
+                  {/* DISCOM View-Only Indicator */}
+                  {user?.role === 'DISCOM_ADMIN' && (
+                    <span className="text-xs text-slate-500 italic font-semibold">
+                      <i className="fa-solid fa-eye mr-1"></i> DISCOM Corporate Monitoring (View-Only)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Investigation Remarks Timeline */}
+              <div>
+                <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <i className="fa-solid fa-clock-rotate-left text-slate-500"></i> Officer Investigation & Remark History
+                </h4>
+                {data.timeline && data.timeline.length > 0 ? (
+                  <div className="space-y-2">
+                    {data.timeline.map((item) => (
+                      <div key={item.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded text-xs">
+                        <div className="flex items-center justify-between font-bold mb-1">
+                          <span className="text-blue-800">{item.info || item.status.toUpperCase()}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{item.remarkDate}</span>
+                        </div>
+                        <p className="text-slate-800 mb-1">{item.remark}</p>
+                        <div className="text-[10px] text-slate-500 flex flex-wrap gap-2">
+                          <span>Officer: <b>{item.username || 'admin'}</b></span>
+                          {item.loads && <span>Load: <b>{item.loads} kW</b></span>}
+                          {item.assess && <span>Assessed: <b className="text-amber-800">₹{item.assess}</b></span>}
+                          {item.reali && <span>Realized: <b className="text-emerald-800">₹{item.reali}</b></span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic">No investigation remarks recorded yet.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+              <button onClick={onClose} className="px-4 py-1.5 bg-slate-600 hover:bg-slate-700 text-white rounded font-bold text-xs">
+                Close Window
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 4. FIELD DIVISION REVERT TO SUPER ADMIN MODAL (matching updatecomplaintvr.php)
+    // =========================================================================
+    function RevertToSuperadminModal({ complaint, divisionOfficers, token, notify, onClose, onSuccess }) {
+      const [suggestedDivision, setSuggestedDivision] = useState('');
+      const [remark, setRemark] = useState('');
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!suggestedDivision.trim()) return notify('Suggested Division is required.', 'error');
+        if (!remark.trim()) return notify('Reason for reverting is mandatory.', 'error');
+
+        setSubmitting(true);
+        try {
+          const res = await fetch(`${API_BASE}/complaints/${complaint.complaintNumber}/revert-to-superadmin`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              suggestedDivision: suggestedDivision.trim(),
+              remark: remark.trim()
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to revert complaint');
+          notify(`Complaint #${complaint.complaintNumber} reverted back to Super Admin with suggested division ${suggestedDivision}`);
+          onSuccess();
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded shadow-2xl max-w-md w-full border border-slate-300 overflow-hidden">
+            <div className="bg-blue-800 text-white p-3.5 flex items-center justify-between">
+              <h3 className="font-bold text-xs flex items-center gap-2">
+                <i className="fa-solid fa-rotate-left text-amber-300"></i> Revert Complaint Back to Super Admin
+              </h3>
+              <button onClick={onClose} className="text-white text-lg">&times;</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-4 space-y-3.5 text-xs font-semibold">
+              <div className="bg-blue-50 p-2.5 rounded border border-blue-200 text-blue-900 text-[11px]">
+                If this grievance does not fall within your substation or division jurisdiction, suggest the correct field division and explain the reason. Super Admin will review and re-assign.
+              </div>
+
+              <div>
+                <label className="text-slate-700 block mb-1">Suggest a Division (Target Username):</label>
+                <select
+                  value={suggestedDivision}
+                  onChange={(e) => setSuggestedDivision(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-2 text-xs bg-white text-slate-800"
+                  required
+                >
+                  <option value="">-- Select Suggested Field Division --</option>
+                  {divisionOfficers.map(o => (
+                    <option key={o.id} value={o.username}>
+                      {o.username} ({o.DISCOM})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-700 block mb-1">Reason for Reversion (Mandatory Remark):</label>
+                <textarea
+                  rows="4"
+                  value={remark}
+                  onChange={(e) => setRemark(e.target.value)}
+                  placeholder="e.g. Site does not fall under EDD Rajapur jurisdiction; it falls under EDD Karwi (Banda Circle)..."
+                  className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                  required
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={onClose} className="px-3.5 py-1.5 bg-slate-200 text-slate-700 rounded font-bold">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold shadow flex items-center gap-1.5"
+                >
+                  {submitting && <i className="fa-solid fa-spinner fa-spin"></i>}
+                  <span>Submit Reversion</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 5. ACTION / CLOSE MODAL (Exact match to Picture 4: upclosedcomplaint.php)
+    // =========================================================================
+    function ComplaintActionModal({ complaint, token, user, notify, onClose, onSuccess }) {
+      const [status, setStatus] = useState('closed');
+      const [info, setInfo] = useState('Theft Found & FIR Done');
+      const [remark, setRemark] = useState('');
+
+      // Sub-fields for Theft Found & FIR
+      const [cat, setCat] = useState('lmv2');
+      const [loads, setLoads] = useState('2.5');
+      const [assess, setAssess] = useState('35000');
+      const [reali, setReali] = useState('10000');
+
+      // Sub-fields for Wrong Tariff
+      const [scat, setScat] = useState('lmv1');
+      const [acat, setAcat] = useState('lmv2');
+      const [sload, setSload] = useState('1.0');
+      const [aload, setAload] = useState('3.0');
+
+      // Sub-fields for Duplicate
+      const [cn, setCn] = useState('');
+
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!remark.trim()) return notify('Remark is mandatory.', 'error');
+        setSubmitting(true);
+
+        const payload = {
+          status,
+          remark: remark.trim()
+        };
+
+        if (status === 'closed') {
+          payload.info = info;
+
+          if (info === 'Theft Found & FIR Done') {
+            payload.category = cat;
+            payload.loads = loads;
+            payload.assess = assess;
+            payload.reali = reali;
+          } else if (info === 'Wrong Tariff') {
+            payload.scat = scat;
+            payload.acat = acat;
+            payload.sload = sload;
+            payload.aload = aload;
+            payload.assess = assess;
+            payload.reali = reali;
+          } else if (info === 'Load Enhancement Case') {
+            payload.sload = sload;
+            payload.aload = aload;
+            payload.assess = assess;
+          } else if (info === 'Duplicate') {
+            payload.cn = cn;
+          }
+        }
+
+        try {
+          const res = await fetch(`${API_BASE}/complaints/${complaint.complaintNumber}/update-status`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to update complaint');
+          notify(`Complaint #${complaint.complaintNumber} closed successfully (${info})`);
+          onSuccess();
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded shadow-2xl max-w-md w-full border border-slate-300 overflow-hidden max-h-[92vh] flex flex-col">
+            {/* Header matching Picture 4: User Profile - Google Chrome style */}
+            <div className="bg-slate-800 text-white p-3 flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-xs flex items-center gap-1.5">
+                <i className="fa-solid fa-gavel text-amber-300"></i> Close The Complaint &mdash; #{complaint.complaintNumber}
+              </h3>
+              <button onClick={onClose} className="text-white text-lg">&times;</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-4 space-y-3.5 text-xs font-semibold overflow-y-auto flex-1">
+              {/* Complaint Number */}
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <span className="text-slate-600">Complaint Number:</span>
+                <span className="font-mono font-bold text-slate-900">{complaint.complaintNumber}</span>
+              </div>
+
+              {/* Status Dropdown */}
+              <div>
+                <label className="text-slate-700 block mb-1">Status:</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-1.5 text-xs bg-white text-slate-800 font-bold"
+                  required
+                >
+                  <option value="closed">Close</option>
+                </select>
+              </div>
+
+              {/* Theft Info Dropdown matching Picture 4 */}
+              <div>
+                <label className="text-slate-700 block mb-1">Theft Info:</label>
+                <select
+                  value={info}
+                  onChange={(e) => setInfo(e.target.value)}
+                  className="w-full border border-teal-500 rounded p-1.5 text-xs bg-teal-50 text-teal-900 font-bold"
+                  required
+                >
+                  <option value="Theft Found & FIR Done">Theft Found & FIR Done</option>
+                  <option value="Wrong Tariff">Wrong Tariff</option>
+                  <option value="Reading Storage Case">Reading Storage Case</option>
+                  <option value="Load Enhancement Case">Load Enhancement Case</option>
+                  <option value="Duplicate">Duplicate</option>
+                  <option value="Theft Not Found">Theft Not Found</option>
+                  <option value="Frivolous">Frivolous</option>
+                </select>
+              </div>
+
+              {/* Dynamic Sub-form: Theft Found & FIR Done */}
+              {info === 'Theft Found & FIR Done' && (
+                <div className="bg-amber-50 p-3 rounded border border-amber-200 space-y-2.5">
+                  <div className="font-bold text-amber-900">FIR & Penalty Parameters:</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Category:</label>
+                      <select value={cat} onChange={(e) => setCat(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white">
+                        <option value="lmv1">LMV1 Domestic</option>
+                        <option value="lmv2">LMV2 Commercial</option>
+                        <option value="lmv4">LMV4 Institutional</option>
+                        <option value="lmv5">LMV5 Agriculture</option>
+                        <option value="lmv6">LMV6 Industrial</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Connected Load (kW):</label>
+                      <input type="number" step="any" value={loads} onChange={(e) => setLoads(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white" required />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Assessment Penalty (₹):</label>
+                      <input type="number" value={assess} onChange={(e) => setAssess(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white font-mono font-bold" required />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Realized Revenue (₹):</label>
+                      <input type="number" value={reali} onChange={(e) => setReali(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white font-mono font-bold text-emerald-700" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic Sub-form: Wrong Tariff */}
+              {info === 'Wrong Tariff' && (
+                <div className="bg-blue-50 p-3 rounded border border-blue-200 space-y-2">
+                  <div className="font-bold text-blue-900">Tariff Differential Parameters:</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Sanctioned Cat:</label>
+                      <input type="text" value={scat} onChange={(e) => setScat(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white" />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Actual Cat:</label>
+                      <input type="text" value={acat} onChange={(e) => setAcat(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white" />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Sanctioned Load (kW):</label>
+                      <input type="number" step="any" value={sload} onChange={(e) => setSload(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white" />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Actual Load (kW):</label>
+                      <input type="number" step="any" value={aload} onChange={(e) => setAload(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic Sub-form: Load Enhancement */}
+              {info === 'Load Enhancement Case' && (
+                <div className="bg-purple-50 p-3 rounded border border-purple-200 space-y-2">
+                  <div className="font-bold text-purple-900">Load Enhancement:</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Sanctioned Load (kW):</label>
+                      <input type="number" step="any" value={sload} onChange={(e) => setSload(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white" />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block mb-0.5">Actual Load (kW):</label>
+                      <input type="number" step="any" value={aload} onChange={(e) => setAload(e.target.value)} className="w-full border border-slate-300 rounded p-1 text-xs bg-white" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic Sub-form: Duplicate */}
+              {info === 'Duplicate' && (
+                <div className="bg-slate-100 p-2.5 rounded border border-slate-300">
+                  <label className="text-slate-700 block mb-1">Duplicate With Complaint No.:</label>
+                  <input
+                    type="number"
+                    value={cn}
+                    onChange={(e) => setCn(e.target.value)}
+                    placeholder="Enter original Complaint No."
+                    className="w-full border border-slate-300 rounded p-1.5 text-xs font-mono font-bold bg-white"
+                    required
+                  />
+                </div>
+              )}
+
+              {/* Upload PDF (matching Picture 4) */}
+              <div>
+                <label className="text-slate-700 block mb-1">Upload PDF:</label>
+                <input type="file" accept=".pdf" className="w-full border border-slate-300 rounded p-1 text-xs bg-white" />
+              </div>
+
+              {/* Remark (matching Picture 4) */}
+              <div>
+                <label className="text-slate-700 block mb-1">Remark:</label>
+                <textarea
+                  rows="3"
+                  value={remark}
+                  onChange={(e) => setRemark(e.target.value)}
+                  placeholder="Enter closing report / verdict remark..."
+                  className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                  required
+                ></textarea>
+              </div>
+
+              {/* Submit Button (matching Picture 4) */}
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 shrink-0">
+                <button type="button" onClick={onClose} className="px-3.5 py-1.5 bg-slate-200 text-slate-700 rounded font-bold">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-5 py-1.5 bg-[#008080] hover:bg-[#006666] text-white font-bold rounded shadow flex items-center gap-1.5"
+                >
+                  {submitting && <i className="fa-solid fa-spinner fa-spin"></i>}
+                  <span>Submit</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 6. SUPER ADMIN DIRECT FORWARDING MODAL
+    // =========================================================================
+    function ForwardToDivisionModal({ complaint, token, notify, onClose, onSuccess }) {
+      const [officers, setOfficers] = useState([]);
+      const [selectedDiscom, setSelectedDiscom] = useState('ALL');
+      const [targetDivision, setTargetDivision] = useState(complaint.sdivision || '');
+      const [remark, setRemark] = useState(
+        complaint.sdivision
+          ? `पुनः जांच हेतु सुझाई गई डिवीजन ${complaint.sdivision} को अग्रसारित।`
+          : 'स्थल पर तत्काल औचक छापा मारकर विधिक कार्यवाही की जाए।'
+      );
+      const [submitting, setSubmitting] = useState(false);
+      const [loading, setLoading] = useState(true);
+
+      const discomList = ['ALL', 'DVVNL', 'KeSCO', 'MVVNL', 'PuVVNL', 'PVVNL'];
+
+      useEffect(() => {
+        const url = selectedDiscom === 'ALL'
+          ? `${API_BASE}/complaints/meta/division-officers`
+          : `${API_BASE}/complaints/meta/division-officers?discom=${selectedDiscom}`;
+
+        setLoading(true);
+        fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+          .then(r => r.json())
+          .then(data => {
+            const list = data.officers || [];
+            setOfficers(list);
+            if (!targetDivision && list.length > 0) {
+              setTargetDivision(complaint.sdivision || list[0].username);
+            }
+          })
+          .catch(e => notify(e.message, 'error'))
+          .finally(() => setLoading(false));
+      }, [selectedDiscom, token]);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!targetDivision) return notify('Target division username is required', 'error');
+        setSubmitting(true);
+
+        try {
+          const res = await fetch(`${API_BASE}/complaints/${complaint.complaintNumber}/forward-to-division`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              targetDivisionUsername: targetDivision,
+              remark: remark.trim()
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to forward complaint');
+          notify(`Complaint #${complaint.complaintNumber} forwarded to ${data.assignedDivision} (${data.discom})`);
+          onSuccess();
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded shadow-2xl max-w-md w-full border border-slate-300 overflow-hidden">
+            <div className="bg-emerald-800 text-white p-3.5 flex items-center justify-between">
+              <h3 className="font-bold text-xs flex items-center gap-2">
+                <i className="fa-solid fa-share text-amber-300"></i> Forward Directly to Field Division
+              </h3>
+              <button onClick={onClose} className="text-white text-lg">&times;</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-4 space-y-3.5 text-xs font-semibold">
+              {complaint.sdivision && (
+                <div className="p-2 bg-amber-50 rounded border border-amber-200 text-amber-900 text-[11px]">
+                  <b>Reverted Complaint:</b> Field officer suggested division: <b>{complaint.sdivision}</b>
+                </div>
+              )}
+
+              {/* DISCOM Filter */}
+              <div>
+                <label className="text-slate-700 block mb-1">Filter by DISCOM:</label>
+                <div className="flex flex-wrap gap-1">
+                  {discomList.map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setSelectedDiscom(d)}
+                      className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${selectedDiscom === d ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Target Division Select */}
+              <div>
+                <label className="text-slate-700 block mb-1">
+                  Target Field Division Username ({officers.length} divisions):
+                </label>
+                {loading ? (
+                  <div className="p-2 text-slate-500 italic"><i className="fa-solid fa-spinner fa-spin mr-1"></i> Loading division officers...</div>
+                ) : (
+                  <select
+                    value={targetDivision}
+                    onChange={(e) => setTargetDivision(e.target.value)}
+                    className="w-full border border-slate-300 rounded p-2 text-xs bg-white text-slate-900 font-bold"
+                    required
+                  >
+                    {officers.map(o => (
+                      <option key={o.id} value={o.username}>
+                        {o.username} ({o.DISCOM}) {o.zone ? `- ${o.zone}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Directive Remark */}
+              <div>
+                <label className="text-slate-700 block mb-1">Forwarding Directive Remark:</label>
+                <textarea
+                  rows="3"
+                  value={remark}
+                  onChange={(e) => setRemark(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-2 text-xs text-slate-800"
+                  required
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={onClose} className="px-3.5 py-1.5 bg-slate-200 text-slate-700 rounded font-bold">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold shadow flex items-center gap-1.5"
+                >
+                  {submitting && <i className="fa-solid fa-spinner fa-spin"></i>}
+                  <span>Forward Directive</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 7. MIS REPORT VIEW (report.php)
+    // =========================================================================
+    function MISReportView({ token, notify }) {
+      const [report, setReport] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`${API_BASE}/complaints/reports/discom-summary`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(r => r.json())
+          .then(d => setReport(d.report || []))
+          .catch(e => notify(e.message, 'error'))
+          .finally(() => setLoading(false));
+      }, [token]);
+
+      if (loading) {
+        return <div className="p-8 text-center text-slate-500 font-semibold"><i className="fa-solid fa-spinner fa-spin text-xl text-teal-600 mb-2"></i> Generating DISCOM report...</div>;
+      }
+
+      return (
+        <div className="overflow-x-auto border border-slate-200 rounded">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-100 text-slate-800 font-bold uppercase text-[11px] border-b border-slate-300">
+                <th className="p-2.5 border-r border-slate-200">DISCOM</th>
+                <th className="p-2.5 border-r border-slate-200 text-right">Total Received</th>
+                <th className="p-2.5 border-r border-slate-200 text-right">Forwarded</th>
+                <th className="p-2.5 border-r border-slate-200 text-right">Closed</th>
+                <th className="p-2.5 border-r border-slate-200 text-right">FIR Cases</th>
+                <th className="p-2.5 border-r border-slate-200 text-right text-amber-900">Assessed (Cr)</th>
+                <th className="p-2.5 border-r border-slate-200 text-right text-emerald-900">Realized (Cr)</th>
+                <th className="p-2.5 text-right">Recovery Rate</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 font-semibold text-slate-700">
+              {report.map(r => (
+                <tr key={r.discom} className="hover:bg-slate-50 transition">
+                  <td className="p-2.5 font-bold text-slate-900 border-r border-slate-200">{r.discom}</td>
+                  <td className="p-2.5 text-right border-r border-slate-200 font-mono">{r.totalReceived}</td>
+                  <td className="p-2.5 text-right border-r border-slate-200 font-mono text-blue-700">{r.forwarded}</td>
+                  <td className="p-2.5 text-right border-r border-slate-200 font-mono text-emerald-700">{r.closed}</td>
+                  <td className="p-2.5 text-right border-r border-slate-200 font-mono">{r.firCases}</td>
+                  <td className="p-2.5 text-right border-r border-slate-200 font-mono text-amber-700">₹{r.totalAssessmentCr}</td>
+                  <td className="p-2.5 text-right border-r border-slate-200 font-mono text-emerald-700">₹{r.totalRealizationCr}</td>
+                  <td className="p-2.5 text-right font-bold text-slate-900 font-mono">{r.recoveryRatio}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 8. DIVISION WISE NO. OF COMPLAINTS DATA (division-wise-dataHQ.php)
+    // Carbon copy of original PHP table showing all 395 divisions across UP
+    // =========================================================================
+    function DivisionWiseDataView({ token, notify }) {
+      const [divisions, setDivisions] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [pageSize, setPageSize] = useState('10');
+      const [currentPage, setCurrentPage] = useState(1);
+
+      useEffect(() => {
+        fetch(`${API_BASE}/complaints/reports/division-wise-data`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(r => r.json())
+          .then(d => {
+            if (d.divisions) setDivisions(d.divisions);
+          })
+          .catch(e => notify(e.message, 'error'))
+          .finally(() => setLoading(false));
+      }, [token]);
+
+      const filtered = useMemo(() => {
+        if (!searchTerm.trim()) return divisions;
+        const s = searchTerm.toLowerCase();
+        return divisions.filter(d =>
+          (d.discom || '').toLowerCase().includes(s) ||
+          (d.zone || '').toLowerCase().includes(s) ||
+          (d.circle || '').toLowerCase().includes(s) ||
+          (d.division || '').toLowerCase().includes(s)
+        );
+      }, [divisions, searchTerm]);
+
+      const totalEntries = filtered.length;
+      const parsedPageSize = pageSize === 'all' ? totalEntries : (parseInt(pageSize) || 10);
+      const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(totalEntries / parsedPageSize));
+
+      const currentList = useMemo(() => {
+        if (pageSize === 'all') return filtered;
+        const start = (currentPage - 1) * parsedPageSize;
+        return filtered.slice(start, start + parsedPageSize);
+      }, [filtered, currentPage, pageSize, parsedPageSize]);
+
+      const exportToExcel = () => {
+        // Exact tableToExcel export replicating original PHP behavior
+        let csvContent = 'DISCOM\tZONE\tCIRCLE\tDIVISION\tNOT PROCESSED\tPENDING BEYOND 5 DAYS\tCLOSED\tTOTAL RECIEVED\r\n';
+        divisions.forEach(d => {
+          csvContent += `${d.discom || ''}\t${d.zone || ''}\t${d.circle || ''}\t${d.division || ''}\t${d.notProcessed}\t${d.pendingBeyond5Days}\t${d.closed}\t${d.totalRecieved}\r\n`;
+        });
+        const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `division-wise-dataHQ_${new Date().toISOString().slice(0, 10)}.xls`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        notify('395 divisions data exported to Excel successfully');
+      };
+
+      if (loading) {
+        return (
+          <div className="p-12 text-center text-slate-500 font-semibold" style={{ backgroundColor: '#e6e6fa' }}>
+            <i className="fa-solid fa-spinner fa-spin text-2xl text-indigo-600 mb-2"></i>
+            <div>Loading 395 field divisions dataset...</div>
+          </div>
+        );
+      }
+
+      const startIdx = totalEntries === 0 ? 0 : (currentPage - 1) * parsedPageSize + 1;
+      const endIdx = pageSize === 'all' ? totalEntries : Math.min(currentPage * parsedPageSize, totalEntries);
+
+      return (
+        <div className="p-4 rounded border border-slate-300" style={{ backgroundColor: '#e6e6fa' }}>
+          {/* Centered Export Button matching division-wise-dataHQ.php */}
+          <div align="center" className="mb-4">
+            <button
+              type="button"
+              id="btnExport"
+              onClick={exportToExcel}
+              className="px-4 py-1.5 bg-white text-slate-800 text-xs font-bold rounded border border-slate-300 shadow-sm hover:bg-slate-50 transition cursor-pointer"
+            >
+              Export To Excel
+            </button>
+          </div>
+
+          {/* DataTables Controls Row */}
+          <div className="flex flex-wrap items-center justify-between text-xs font-semibold text-slate-700 mb-3 px-1">
+            <div className="flex items-center gap-1.5">
+              <span>Show</span>
+              <select
+                value={pageSize}
+                onChange={(e) => { setPageSize(e.target.value); setCurrentPage(1); }}
+                className="border border-slate-300 rounded px-2 py-1 bg-white text-xs font-semibold"
+              >
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="all">All ({divisions.length})</option>
+              </select>
+              <span>entries</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 mt-2 sm:mt-0">
+              <span>Search:</span>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                placeholder=""
+                className="border border-slate-300 rounded px-2.5 py-1 bg-white text-xs font-normal"
+              />
+            </div>
+          </div>
+
+          {/* Table matching datatable-1 table table-bordered table-striped */}
+          <div className="overflow-x-auto bg-white border border-slate-300 rounded shadow-sm">
+            <table id="example" className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-[#e6e6fa] border-b border-slate-300 text-[11px] font-bold text-slate-800 uppercase tracking-tight">
+                  <th className="p-2.5 border-r border-slate-300">DISCOM</th>
+                  <th className="p-2.5 border-r border-slate-300">ZONE</th>
+                  <th className="p-2.5 border-r border-slate-300">CIRCLE</th>
+                  <th className="p-2.5 border-r border-slate-300">DIVISION</th>
+                  <th className="p-2.5 border-r border-slate-300 text-center">NOT PROCESSED</th>
+                  <th className="p-2.5 border-r border-slate-300 text-center">PENDING BEYOND 5 DAYS</th>
+                  <th className="p-2.5 border-r border-slate-300 text-center">CLOSED</th>
+                  <th className="p-2.5 text-center">TOTAL RECIEVED</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {currentList.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="p-6 text-center text-slate-500 font-semibold">
+                      No matching records found.
+                    </td>
+                  </tr>
+                ) : (
+                  currentList.map((d, idx) => (
+                    <tr
+                      key={d.id}
+                      className={idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50/70 hover:bg-slate-100'}
+                    >
+                      <td className="p-2 border-r border-slate-200 font-semibold text-slate-900">{d.discom}</td>
+                      <td className="p-2 border-r border-slate-200 text-slate-800">{d.zone}</td>
+                      <td className="p-2 border-r border-slate-200 text-slate-800">{d.circle}</td>
+                      <td className="p-2 border-r border-slate-200 font-mono font-bold text-slate-900">{d.division}</td>
+                      <td className="p-2 border-r border-slate-200 text-center font-mono font-bold text-slate-800">{d.notProcessed}</td>
+                      <td className="p-2 border-r border-slate-200 text-center font-mono font-bold text-slate-800">{d.pendingBeyond5Days}</td>
+                      <td className="p-2 border-r border-slate-200 text-center font-mono font-bold text-slate-800">{d.closed}</td>
+                      <td className="p-2 text-center font-mono font-bold text-slate-800">{d.totalRecieved}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer Pagination Row */}
+          <div className="flex flex-wrap items-center justify-between text-xs font-semibold text-slate-600 mt-3 px-1">
+            <div>
+              {totalEntries > 0
+                ? `Showing ${startIdx} to ${endIdx} of ${totalEntries} entries`
+                : 'Showing 0 to 0 of 0 entries'}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1 mt-2 sm:mt-0">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded font-bold disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+                >
+                  &lt;
+                </button>
+                <span className="px-2 py-1 text-slate-700">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded font-bold disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+                >
+                  &gt;
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 9. CHANGE PASSWORD MODAL (change-password.php)
+    // =========================================================================
+    function ChangePasswordModal({ token, onClose, notify }) {
+      const [oldPassword, setOldPassword] = useState('');
+      const [newPassword, setNewPassword] = useState('');
+      const [confirmPassword, setConfirmPassword] = useState('');
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (newPassword !== confirmPassword) {
+          return notify('New password and confirm password do not match.', 'error');
+        }
+        setSubmitting(true);
+        try {
+          const res = await fetch(`${API_BASE}/auth/change-password`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ oldPassword, newPassword, confirmPassword })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Password update failed');
+          notify('Password updated successfully!');
+          onClose();
+        } catch (err) {
+          notify(err.message, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded shadow-2xl max-w-sm w-full border border-slate-300 overflow-hidden">
+            <div className="bg-slate-800 text-white p-3.5 flex items-center justify-between">
+              <h3 className="font-bold text-xs flex items-center gap-2">
+                <i className="fa-solid fa-key text-amber-300"></i> Change Account Password
+              </h3>
+              <button onClick={onClose} className="text-white text-lg">&times;</button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-4 space-y-3 text-xs font-semibold">
+              <div>
+                <label className="text-slate-700 block mb-1">Old Password:</label>
+                <input
+                  type="password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-1.5 text-xs"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-slate-700 block mb-1">New Password:</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-1.5 text-xs"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-slate-700 block mb-1">Confirm New Password:</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full border border-slate-300 rounded p-1.5 text-xs"
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={onClose} className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded font-bold">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold shadow"
+                >
+                  {submitting && <i className="fa-solid fa-spinner fa-spin mr-1"></i>}
+                  Update Password
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

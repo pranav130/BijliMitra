@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: bijlimitra-app
+    restart: always
+    ports:
+      - "5050:5050"
+    environment:
+      - NODE_ENV=development
+      - PORT=5050
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=cms_dev
+      - DB_USER=root
+      - DB_PASSWORD=rootpassword
+      - JWT_SECRET=UPPCL_BIJLI_MITRA_SECRET_KEY_2026_SECURE_TOKEN
+      - JWT_EXPIRES_IN=8h
+      - BCRYPT_SALT_ROUNDS=10
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.0
+    container_name: bijlimitra-mysql
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: cms_dev
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
